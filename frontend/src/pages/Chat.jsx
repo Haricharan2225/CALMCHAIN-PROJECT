@@ -10,7 +10,7 @@ import { EmergencyModal } from "../components/EmergencyModal";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 
-const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:5000");
+const socket = io(import.meta.env.VITE_API_URL);
 
 export const Chat = () => {
   const { currentUser } = useAuth();
