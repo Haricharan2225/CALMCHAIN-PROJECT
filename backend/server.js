@@ -32,7 +32,7 @@ io.on("connection", (socket) => {
       let aiResponseText = "Tell me more, I'm listening...";
       
       const lower = text.toLowerCase();
-      const isSuicide = ["suicide", "sucide", "kill myself", "end life", "want to die"].some(k => lower.includes(k));
+      const isSuicide = ["suicide", "sucide", "kill myself", "end life", "want to die","Breakup && die"].some(k => lower.includes(k));
       let currentEmotion = emotion;
 
       if (isSuicide || emotion === "danger") {
