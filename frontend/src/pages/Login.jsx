@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -28,6 +28,7 @@ export const Login = () => {
       const user = userCredential.user;
 
       let role = "user";
+      const isAdminEmail = email.toLowerCase() === "haripatel2225@gmail.com";
       try {
         const adminDoc = await getDoc(doc(db, "admins", user.uid));
         if (adminDoc.exists()) {
@@ -35,16 +36,28 @@ export const Login = () => {
         } else {
           const userDoc = await getDoc(doc(db, "users", user.uid));
           if (userDoc.exists()) {
-            role = userDoc.data().role || "user";
-          } else if (email.toLowerCase() === "haripatel2225@gmail.com") {
+            role = userDoc.data().role || (isAdminEmail ? "admin" : "user");
+          } else if (isAdminEmail) {
             role = "admin";
           }
         }
       } catch (roleErr) {
-        if (email.toLowerCase() === "haripatel2225@gmail.com") {
+        if (isAdminEmail) {
           role = "admin";
         }
       }
+
+      // Sync user profile document into Firestore
+      const targetCol = (role === "admin" || isAdminEmail) ? "admins" : "users";
+      setDoc(
+        doc(db, targetCol, user.uid),
+        {
+          email: user.email,
+          role: role,
+          lastLoginAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch(() => {});
 
       if (role === "admin") {
         navigate("/admin");

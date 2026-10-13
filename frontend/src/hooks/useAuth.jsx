@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
 const AuthContext = createContext();
@@ -16,15 +16,28 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(user);
         // fetch role from firestore
         try {
+          const isAdminUser = user.email?.toLowerCase() === "haripatel2225@gmail.com";
           const adminDoc = await getDoc(doc(db, "admins", user.uid));
           if (adminDoc.exists()) {
-            setUserRole(adminDoc.data().role);
+            setUserRole(adminDoc.data().role || "admin");
           } else {
             const userDoc = await getDoc(doc(db, "users", user.uid));
             if (userDoc.exists()) {
-              setUserRole(userDoc.data().role);
+              setUserRole(userDoc.data().role || (isAdminUser ? "admin" : "user"));
             } else {
-              setUserRole("user"); // fallback
+              const assignedRole = isAdminUser ? "admin" : "user";
+              setUserRole(assignedRole);
+              // Auto-sync user account record into Firestore so users collection reflects registered accounts
+              const targetCol = assignedRole === "admin" ? "admins" : "users";
+              setDoc(
+                doc(db, targetCol, user.uid),
+                {
+                  email: user.email,
+                  role: assignedRole,
+                  lastActiveAt: new Date().toISOString()
+                },
+                { merge: true }
+              ).catch(() => {});
             }
           }
         } catch (error) {
