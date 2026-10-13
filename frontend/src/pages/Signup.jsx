@@ -70,18 +70,23 @@ export const Signup = () => {
   };
 
   return (
-    <div className={`min-h-screen ${theme.pageBg} text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-['Inter'] transition-colors duration-500`}>
-      {/* Ambient Theme Halo */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
+    <div className="min-h-screen bg-[#0B1120] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-['Inter']">
+      {/* Ambient Theme Halo matching Landing Page */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
         <motion.div
           animate={{ scale: [1, 1.15, 1], x: [0, 30, 0] }}
           transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute -top-[15%] -left-[10%] w-[50%] h-[50%] blur-[130px] rounded-full bg-teal-500/10"
+          className="absolute -top-[15%] -left-[10%] w-[55%] h-[55%] blur-[140px] rounded-full bg-teal-500/15"
         />
         <motion.div
           animate={{ scale: [1, 1.2, 1], x: [0, -30, 0] }}
           transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-[30%] -right-[10%] w-[50%] h-[60%] blur-[140px] rounded-full bg-cyan-600/10"
+          className="absolute top-[30%] -right-[10%] w-[50%] h-[60%] blur-[150px] rounded-full bg-cyan-600/15"
+        />
+        <motion.div
+          animate={{ scale: [1, 1.1, 1], y: [0, -20, 0] }}
+          transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute bottom-[-10%] left-[25%] w-[45%] h-[45%] blur-[130px] rounded-full bg-emerald-600/10"
         />
       </div>
 

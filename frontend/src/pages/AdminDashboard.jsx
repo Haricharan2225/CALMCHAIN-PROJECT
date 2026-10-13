@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, getDocs, query, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, query, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../context/ThemeContext";
 import { motion } from "framer-motion";
@@ -22,7 +22,10 @@ import {
   RotateCcw,
   ArrowLeft,
   Lock,
-  Info
+  Info,
+  ChevronDown,
+  ChevronUp,
+  ShieldCheck
 } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 
@@ -31,11 +34,16 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 export const AdminDashboard = () => {
   const navigate = useNavigate();
   const { currentUser, userRole } = useAuth();
-  const { theme, supportLevel } = useTheme();
+  const { theme } = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [retryTrigger, setRetryTrigger] = useState(0);
+  const [showRuleHelp, setShowRuleHelp] = useState(false);
+
+  // Verified admin state
+  const [isAdminVerified, setIsAdminVerified] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
 
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -46,6 +54,70 @@ export const AdminDashboard = () => {
   const [recentRisks, setRecentRisks] = useState([]);
   const [liveClock, setLiveClock] = useState("");
 
+  // Cryptographic & Document-level Admin Authorization Check
+  useEffect(() => {
+    let isMounted = true;
+    const verifyAdmin = async () => {
+      if (!currentUser) {
+        if (isMounted) {
+          setIsAdminVerified(false);
+          setAuthChecking(false);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        // 1. Check custom claim on Firebase Auth token
+        const tokenResult = await currentUser.getIdTokenResult();
+        if (tokenResult.claims && tokenResult.claims.admin === true) {
+          if (isMounted) setIsAdminVerified(true);
+          return;
+        }
+
+        // 2. Check Firestore admins collection document for this authenticated UID
+        const adminDoc = await getDoc(doc(db, "admins", currentUser.uid));
+        if (adminDoc.exists() && adminDoc.data().role === "admin") {
+          if (isMounted) setIsAdminVerified(true);
+          return;
+        }
+
+        // 3. Verified email fallback for designated admin
+        if (
+          currentUser.email?.toLowerCase() === "haripatel2225@gmail.com" &&
+          (userRole === "admin" || !userRole)
+        ) {
+          if (isMounted) setIsAdminVerified(true);
+          return;
+        }
+
+        if (userRole === "admin") {
+          if (isMounted) setIsAdminVerified(true);
+          return;
+        }
+
+        if (isMounted) setIsAdminVerified(false);
+      } catch (err) {
+        console.warn("Admin authorization verification notice:", err);
+        if (isMounted) {
+          setIsAdminVerified(
+            userRole === "admin" ||
+            currentUser.email?.toLowerCase() === "haripatel2225@gmail.com"
+          );
+        }
+      } finally {
+        if (isMounted) setAuthChecking(false);
+      }
+    };
+
+    verifyAdmin();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser, userRole]);
+
+  // Live Date/Time
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -64,7 +136,10 @@ export const AdminDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Real-time Firestore Telemetry Fetching
   useEffect(() => {
+    if (!isAdminVerified && !authChecking) return;
+
     setLoading(true);
     setError(null);
 
@@ -72,12 +147,14 @@ export const AdminDashboard = () => {
 
     const loadData = async () => {
       try {
+        // Fetch registered user records
         const uSnap = await getDocs(collection(db, "users")).catch(() => ({ size: 0 }));
         const aSnap = await getDocs(collection(db, "admins")).catch(() => ({ size: 0 }));
         const total = (uSnap?.size || 0) + (aSnap?.size || 0);
 
         setStats((prev) => ({ ...prev, totalUsers: total }));
 
+        // Stream real-time chats across the platform
         const qChats = query(collection(db, "chats"));
         unsubChats = onSnapshot(
           qChats,
@@ -131,9 +208,9 @@ export const AdminDashboard = () => {
               err?.code === "permission-denied" ||
               err?.message?.includes("insufficient permissions");
             setError({
-              title: isPermission ? "Firestore Security Rules Required" : "Connection Notice",
+              title: isPermission ? "Firestore Security Rules Activation Required" : "Connection Notice",
               message: isPermission
-                ? "Failed to stream cross-user chat telemetry. If you haven't published the updated security rules in Firebase Console yet, copy the rules from firestore.rules to Firebase Console → Firestore Database → Rules."
+                ? "Firestore real-time streaming requires published admin permissions. To view cross-user chat telemetry, ensure the admin rule from firestore.rules is published in Firebase Console."
                 : (err.message || "Failed to stream real-time chat data.")
             });
             setLoading(false);
@@ -142,7 +219,7 @@ export const AdminDashboard = () => {
       } catch (err) {
         console.error("Admin dashboard fetch error:", err);
         setError({
-          title: "Firestore Data Services Error",
+          title: "Firestore Data Services Notice",
           message: err.message || "Error connecting to Firestore data services."
         });
         setLoading(false);
@@ -154,7 +231,7 @@ export const AdminDashboard = () => {
     return () => {
       if (unsubChats) unsubChats();
     };
-  }, [retryTrigger]);
+  }, [retryTrigger, isAdminVerified, authChecking]);
 
   const handleRetry = () => {
     setError(null);
@@ -166,20 +243,17 @@ export const AdminDashboard = () => {
     auth.signOut().then(() => navigate("/login"));
   };
 
-  const isAuthorizedAdmin =
-    userRole === "admin" ||
-    currentUser?.email?.toLowerCase() === "haripatel2225@gmail.com";
-
-  if (!isAuthorizedAdmin && !loading) {
+  // Restricted Access Screen for Non-Admins
+  if (!isAdminVerified && !authChecking) {
     return (
-      <div className={`min-h-screen ${theme.pageBg} ${theme.textPrimary} flex items-center justify-center p-6 font-['Inter']`}>
+      <div className={`min-h-screen ${theme.pageBg} text-slate-900 flex items-center justify-center p-6 font-['Inter']`}>
         <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl p-8 text-center shadow-xl">
           <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-200">
             <Lock size={28} />
           </div>
           <h1 className="text-xl font-bold font-['Outfit'] mb-2 text-slate-900">Restricted Admin Portal</h1>
           <p className="text-xs text-slate-500 mb-6">
-            Your account ({currentUser?.email}) does not have administrative privileges.
+            Your authenticated account ({currentUser?.email || "anonymous"}) does not have verified administrative privileges.
           </p>
           <Link
             to="/chat"
@@ -224,7 +298,7 @@ export const AdminDashboard = () => {
   };
 
   return (
-    <div className={`min-h-screen ${theme.pageBg} ${theme.textPrimary} p-6 md:p-10 font-['Inter'] relative overflow-x-hidden transition-colors duration-500`}>
+    <div className={`min-h-screen ${theme.pageBg} text-slate-900 p-6 md:p-10 font-['Inter'] relative overflow-x-hidden transition-colors duration-500`}>
       <div className="max-w-7xl mx-auto space-y-8 relative z-10">
         {/* Header Bar */}
         <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 border-b ${theme.border} gap-4`}>
@@ -238,9 +312,12 @@ export const AdminDashboard = () => {
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badge}`}>
                   Live Firestore
                 </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                  <ShieldCheck size={11} /> Verified Admin
+                </span>
               </div>
               <p className={`text-xs ${theme.textSecondary} mt-0.5 font-medium`}>
-                Mental Wellness Telemetry & Risk Supervision
+                Mental Wellness Telemetry & Risk Supervision • {currentUser?.email}
               </p>
             </div>
           </div>
@@ -269,20 +346,55 @@ export const AdminDashboard = () => {
 
         {/* Detailed Error Diagnostic Banner with Functional Retry */}
         {error && (
-          <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-start gap-3">
-              <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block text-amber-950 font-bold mb-0.5">{error.title}</strong>
-                <span>{error.message}</span>
+          <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block text-amber-950 font-bold mb-0.5">{error.title}</strong>
+                  <span>{error.message}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowRuleHelp(!showRuleHelp)}
+                  className="px-3 py-2 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  {showRuleHelp ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  Rule Instructions
+                </button>
+                <button
+                  onClick={handleRetry}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-xl font-bold text-white flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                >
+                  <RotateCcw size={13} /> Retry Connection
+                </button>
               </div>
             </div>
-            <button
-              onClick={handleRetry}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-xl font-bold text-white flex items-center gap-1.5 shrink-0 transition cursor-pointer shadow-xs"
-            >
-              <RotateCcw size={13} /> Retry Connection
-            </button>
+
+            {showRuleHelp && (
+              <div className="mt-3 p-4 bg-white rounded-xl border border-amber-200 text-slate-800 space-y-2">
+                <p className="font-semibold text-slate-900">
+                  How to activate in Firebase Console (1-minute setup):
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                  <li>Open <strong>Firebase Console</strong> → select project <code>calmchain-project</code>.</li>
+                  <li>Click <strong>Firestore Database</strong> in the left sidebar → open the <strong>Rules</strong> tab.</li>
+                  <li>Ensure <code>isAdmin()</code> permits your admin email or token claim:
+                    <pre className="mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-mono text-slate-900 overflow-x-auto">
+{`function isAdmin() {
+  return request.auth != null && (
+    request.auth.token.admin == true ||
+    request.auth.token.email == 'haripatel2225@gmail.com' ||
+    exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+  );
+}`}
+                    </pre>
+                  </li>
+                  <li>Click <strong>Publish</strong>. Once published, click <strong>Retry Connection</strong> above.</li>
+                </ol>
+              </div>
+            )}
           </div>
         )}
 

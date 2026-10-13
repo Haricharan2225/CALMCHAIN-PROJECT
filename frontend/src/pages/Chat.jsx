@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../context/ThemeContext";
 import { assessSupportLevel } from "../utils/classifier";
@@ -37,7 +37,8 @@ import {
   X,
   PhoneCall,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Loader2
 } from "lucide-react";
 import { EmergencyModal } from "../components/EmergencyModal";
 import { BreathingExerciseModal } from "../components/BreathingExerciseModal";
@@ -59,6 +60,11 @@ export const Chat = () => {
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
+  // Active Refs to prevent stale React closures
+  const currentChatIdRef = useRef(null);
+  const messagesRef = useRef([]);
+  const ttsEnabledRef = useRef(false);
+
   // Message composition
   const [newMessage, setNewMessage] = useState("");
   const [editingMsgId, setEditingMsgId] = useState(null);
@@ -73,11 +79,11 @@ export const Chat = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Voice Input (Auto-submit workflow upon speech completion)
-  const [voiceState, setVoiceState] = useState("idle"); // 'idle' | 'listening' | 'error'
+  const [voiceState, setVoiceState] = useState("idle"); // 'idle' | 'listening' | 'processing'
   const [sttSupported, setSttSupported] = useState(true);
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
-  const accumulatedTranscriptRef = useRef("");
+  const finalTranscriptRef = useRef("");
   const hasSubmittedVoiceRef = useRef(false);
   const userCancelledVoiceRef = useRef(false);
   const silenceTimerRef = useRef(null);
@@ -99,6 +105,20 @@ export const Chat = () => {
   // Refs
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
+  const pendingAiTimerRef = useRef(null);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    currentChatIdRef.current = currentChatId;
+  }, [currentChatId]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
 
   // 1. Camera Consent Check on sign-in / entry
   useEffect(() => {
@@ -129,7 +149,110 @@ export const Chat = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 3. Initialize Socket.IO connection
+  // 3. Speech Synthesis (Read aloud) - Independent from message display
+  const speakReply = useCallback((text) => {
+    if (!window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const cleanSpeakText = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, "").trim();
+      if (!cleanSpeakText) return;
+
+      const utterance = new SpeechSynthesisUtterance(cleanSpeakText);
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      setIsSpeaking(false);
+    }
+  }, []);
+
+  const stopSpeaking = useCallback(() => {
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
+      setIsSpeaking(false);
+    }
+  }, []);
+
+  // 4. Central Incoming Assistant Message Handler (Guarantees visible text bubble first!)
+  const handleIncomingAssistantMessage = useCallback(async (incoming) => {
+    if (!incoming || !incoming.text) return;
+
+    // Clear timeout fallback if active
+    if (pendingAiTimerRef.current) {
+      clearTimeout(pendingAiTimerRef.current);
+      pendingAiTimerRef.current = null;
+    }
+
+    // Dismiss typing indicator
+    setIsAiReplying(false);
+
+    // Update active level and show emergency if Level 3
+    if (incoming.level) {
+      setSupportLevel(incoming.level);
+      if (incoming.level === 3) setShowEmergency(true);
+    }
+
+    const aiMsgObj = {
+      id: `ai_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      text: incoming.text,
+      sender: "ai",
+      emotion: incoming.emotion || "calm",
+      level: incoming.level || 1,
+      timestamp: incoming.timestamp || new Date().toISOString()
+    };
+
+    // STEP 1: IMMEDIATELY RENDER IN REACT STATE (Guarantees visible bubble independently of TTS & network!)
+    setMessages((prevMsgs) => {
+      // Deduplicate: avoid adding identical response if arrived twice (e.g. socket + REST)
+      const alreadyExists = prevMsgs.some(
+        (m) =>
+          m.sender === "ai" &&
+          m.text === aiMsgObj.text &&
+          Math.abs(new Date(m.timestamp || 0) - new Date(aiMsgObj.timestamp || 0)) < 3000
+      );
+      if (alreadyExists) return prevMsgs;
+      return [...prevMsgs, aiMsgObj];
+    });
+
+    // STEP 2: Optional text-to-speech audio (Plays independently; does NOT block or hide text bubble)
+    if (ttsEnabledRef.current && incoming.text) {
+      speakReply(incoming.text);
+    }
+
+    // STEP 3: Persist to Firestore document using currentChatIdRef
+    const activeChatId = currentChatIdRef.current;
+    if (activeChatId) {
+      try {
+        const docRef = doc(db, "chats", activeChatId);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const curMsgs = snap.data().messages || [];
+          const alreadyInDoc = curMsgs.some(
+            (m) =>
+              m.sender === "ai" &&
+              m.text === aiMsgObj.text &&
+              Math.abs(new Date(m.timestamp || 0) - new Date(aiMsgObj.timestamp || 0)) < 3000
+          );
+          if (!alreadyInDoc) {
+            await updateDoc(docRef, {
+              messages: [...curMsgs, aiMsgObj],
+              updatedAt: new Date().toISOString(),
+              supportLevel: incoming.level || 1
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Firestore background sync notice:", err);
+      }
+    }
+  }, [setSupportLevel, speakReply]);
+
+  // 5. Initialize Socket.IO connection
   useEffect(() => {
     const backendUrl =
       import.meta.env.VITE_API_URL ||
@@ -149,113 +272,89 @@ export const Chat = () => {
       }
     });
 
-    s.on("receiveMessage", async (incoming) => {
-      if (!incoming) return;
-      setIsAiReplying(false);
-
-      if (incoming.level) {
-        setSupportLevel(incoming.level);
-        if (incoming.level === 3) setShowEmergency(true);
-      }
-
-      if (ttsEnabled && incoming.text) {
-        speakReply(incoming.text);
-      }
-
-      if (currentChatId) {
-        try {
-          const docRef = doc(db, "chats", currentChatId);
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            const curMsgs = snap.data().messages || [];
-            const alreadyExists = curMsgs.some(
-              (m) =>
-                m.text === incoming.text &&
-                Math.abs(new Date(m.timestamp) - new Date(incoming.timestamp)) < 2000
-            );
-            if (!alreadyExists) {
-              const aiMsg = {
-                id: `ai_${Date.now()}`,
-                text: incoming.text,
-                sender: "ai",
-                emotion: incoming.emotion || "calm",
-                level: incoming.level || 1,
-                timestamp: incoming.timestamp || new Date().toISOString()
-              };
-              const updated = [...curMsgs, aiMsg];
-              await updateDoc(docRef, {
-                messages: updated,
-                updatedAt: new Date().toISOString(),
-                supportLevel: incoming.level || 1
-              });
-            }
-          }
-        } catch (err) {
-          console.error("Error appending AI message to Firestore:", err);
-        }
-      }
+    s.on("receiveMessage", (incoming) => {
+      handleIncomingAssistantMessage(incoming);
     });
 
     return () => {
       s.disconnect();
     };
-  }, [currentChatId, currentUser, ttsEnabled]);
+  }, [currentUser, handleIncomingAssistantMessage]);
 
-  // AI dispatch helper (Socket.IO with REST fallback)
-  const dispatchAiRequest = async (text, assessed, currentMsgList) => {
+  // REST Fallback Dispatcher
+  const callRestAiFallback = useCallback(async (text, assessed, currentMsgList) => {
+    try {
+      const backendUrl =
+        import.meta.env.VITE_API_URL ||
+        import.meta.env.VITE_BACKEND_URL ||
+        "http://localhost:5000";
+
+      const historyContext = currentMsgList.slice(-6).map((m) => ({
+        text: m.text,
+        sender: m.sender
+      }));
+
+      const res = await fetch(`${backendUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUser?.uid || "anonymous",
+          text: text,
+          emotion: assessed.emotion,
+          history: historyContext
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        handleIncomingAssistantMessage(data);
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err) {
+      console.warn("[CalmChain] REST fallback error:", err);
+      setIsAiReplying(false);
+      // Visible fallback message
+      handleIncomingAssistantMessage({
+        text: "I'm right here with you 💙 Take a slow, steady breath. I'm listening closely — feel free to share whatever is on your mind.",
+        emotion: "calm",
+        level: assessed.level || 1,
+        sender: "ai",
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [currentUser, handleIncomingAssistantMessage]);
+
+  // AI dispatch helper (Socket.IO with robust REST fallback timeout)
+  const dispatchAiRequest = useCallback((text, assessed, currentMsgList) => {
+    const historyContext = currentMsgList.slice(-6).map((m) => ({
+      text: m.text,
+      sender: m.sender
+    }));
+
     if (socketRef.current?.connected) {
       socketRef.current.emit("sendMessage", {
-        userId: currentUser.uid,
+        userId: currentUser?.uid,
         text: text,
-        emotion: assessed.emotion
+        emotion: assessed.emotion,
+        history: historyContext
       });
+
+      // 6.5s fallback timeout: if socket reply drops, trigger REST fallback
+      pendingAiTimerRef.current = setTimeout(() => {
+        console.warn("[CalmChain] Socket response timeout, invoking REST fallback...");
+        callRestAiFallback(text, assessed, currentMsgList);
+      }, 6500);
     } else {
-      try {
-        const backendUrl =
-          import.meta.env.VITE_API_URL ||
-          import.meta.env.VITE_BACKEND_URL ||
-          "http://localhost:5000";
-
-        const res = await fetch(`${backendUrl}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: currentUser.uid,
-            text: text,
-            emotion: assessed.emotion
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setIsAiReplying(false);
-          const aiMsgObj = {
-            id: `ai_${Date.now()}`,
-            text: data.text,
-            sender: "ai",
-            emotion: data.emotion || "calm",
-            level: data.level || 1,
-            timestamp: new Date().toISOString()
-          };
-          const withAi = [...currentMsgList, aiMsgObj];
-          await updateDoc(doc(db, "chats", currentChatId), {
-            messages: withAi,
-            updatedAt: new Date().toISOString(),
-            supportLevel: data.level || 1
-          });
-          if (ttsEnabled && data.text) speakReply(data.text);
-        }
-      } catch (restErr) {
-        console.warn("REST fallback notice:", restErr);
-        setIsAiReplying(false);
-      }
+      callRestAiFallback(text, assessed, currentMsgList);
     }
-  };
+  }, [currentUser, callRestAiFallback]);
 
   // Central Message Submitter
-  const submitMessage = async (textToSend) => {
+  const submitMessage = useCallback(async (textToSend) => {
     const trimmed = (textToSend !== undefined ? textToSend : newMessage).trim();
-    if (!trimmed || !currentChatId || !currentUser) return;
+    const activeChatId = currentChatIdRef.current;
+    if (!trimmed || !activeChatId || !currentUser) return;
 
     // Assess support level using centralized classifier
     const assessed = assessSupportLevel(trimmed);
@@ -271,13 +370,14 @@ export const Chat = () => {
       timestamp: new Date().toISOString()
     };
 
-    const updated = [...messages, userMsgObj];
+    // Update state immediately
+    const updated = [...messagesRef.current, userMsgObj];
     setMessages(updated);
     setNewMessage("");
     setIsAiReplying(true);
 
     // Generate descriptive title from first user message if applicable
-    const isFirstUserMsg = !messages.some((m) => m.sender === "user");
+    const isFirstUserMsg = !messagesRef.current.some((m) => m.sender === "user");
     const autoTitle = isFirstUserMsg
       ? trimmed.length > 28
         ? `${trimmed.slice(0, 28)}...`
@@ -285,7 +385,7 @@ export const Chat = () => {
       : null;
 
     try {
-      const chatDocRef = doc(db, "chats", currentChatId);
+      const chatDocRef = doc(db, "chats", activeChatId);
       const updatePayload = {
         messages: updated,
         updatedAt: new Date().toISOString(),
@@ -298,9 +398,9 @@ export const Chat = () => {
     }
 
     dispatchAiRequest(trimmed, assessed, updated);
-  };
+  }, [currentUser, newMessage, setSupportLevel, dispatchAiRequest]);
 
-  // 4. VOICE INPUT (Speech Recognition with real-time dictation & auto-submit)
+  // 6. VOICE INPUT (Speech Recognition with real-time dictation & reliable auto-submit)
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -314,50 +414,47 @@ export const Chat = () => {
       recognition.onstart = () => {
         setVoiceState("listening");
         setVoiceError("");
-        accumulatedTranscriptRef.current = "";
+        finalTranscriptRef.current = "";
         hasSubmittedVoiceRef.current = false;
         userCancelledVoiceRef.current = false;
       };
 
       recognition.onresult = (event) => {
         let interimText = "";
-        let finalChunk = "";
+        let finalPiece = "";
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalChunk += transcript;
+            finalPiece += transcript;
           } else {
             interimText += transcript;
           }
         }
 
-        if (finalChunk) {
-          accumulatedTranscriptRef.current = (
-            accumulatedTranscriptRef.current + " " + finalChunk
+        if (finalPiece) {
+          finalTranscriptRef.current = (
+            finalTranscriptRef.current + " " + finalPiece
           ).trim();
-          setNewMessage(accumulatedTranscriptRef.current);
+          setNewMessage(finalTranscriptRef.current);
 
-          // Reset silence timer for automatic submission on speech pause
+          // Reset silence timer for automatic submission on speech pause (1.4s)
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(() => {
             if (
               !hasSubmittedVoiceRef.current &&
               !userCancelledVoiceRef.current &&
-              accumulatedTranscriptRef.current.trim()
+              finalTranscriptRef.current.trim()
             ) {
-              if (recognitionRef.current) {
-                try {
-                  recognitionRef.current.stop();
-                } catch (e) {
-                  // Ignore
-                }
-              }
+              setVoiceState("processing");
+              try {
+                recognitionRef.current?.stop();
+              } catch (e) {}
             }
           }, 1400);
         } else if (interimText) {
           setNewMessage(
-            (accumulatedTranscriptRef.current + " " + interimText).trim()
+            (finalTranscriptRef.current + " " + interimText).trim()
           );
         }
       };
@@ -366,21 +463,33 @@ export const Chat = () => {
         console.warn("Speech recognition notice:", event.error);
         if (event.error === "not-allowed") {
           setVoiceError("Microphone permission denied. You can continue typing normally.");
+        } else if (event.error !== "no-speech") {
+          setVoiceError("Voice recognition paused. You can continue typing or tap mic again.");
         }
         setVoiceState("idle");
       };
 
       recognition.onend = () => {
-        setVoiceState("idle");
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
+        // If user cancelled explicitly, ignore
+        if (userCancelledVoiceRef.current) {
+          setVoiceState("idle");
+          return;
+        }
+
         // Auto-submit workflow: submit once when speech completes
-        if (!userCancelledVoiceRef.current && !hasSubmittedVoiceRef.current) {
-          const textToSubmit = accumulatedTranscriptRef.current.trim() || newMessage.trim();
-          if (textToSubmit) {
-            hasSubmittedVoiceRef.current = true;
-            submitMessage(textToSubmit);
-          }
+        const textToSubmit = finalTranscriptRef.current.trim() || newMessage.trim();
+        if (!hasSubmittedVoiceRef.current && textToSubmit) {
+          hasSubmittedVoiceRef.current = true;
+          setVoiceState("processing");
+          submitMessage(textToSubmit);
+          finalTranscriptRef.current = "";
+          setTimeout(() => {
+            setVoiceState("idle");
+          }, 400);
+        } else {
+          setVoiceState("idle");
         }
       };
 
@@ -392,30 +501,33 @@ export const Chat = () => {
     return () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (recognitionRef.current) {
-        recognitionRef.current.abort();
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
       }
     };
-  }, [currentChatId, currentUser, messages]);
+  }, [submitMessage, newMessage]);
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) return;
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-    if (voiceState === "listening") {
-      // User clicked mic while listening -> cancel voice input cleanly
+    if (voiceState === "listening" || voiceState === "processing") {
+      // Deliberate user cancel
       userCancelledVoiceRef.current = true;
       try {
         recognitionRef.current.stop();
-      } catch (err) {
-        // Ignore
-      }
+      } catch (err) {}
       setVoiceState("idle");
     } else {
+      // Clean start: stop any playing speech synthesis first so bot doesn't listen to itself
+      stopSpeaking();
+      userCancelledVoiceRef.current = false;
+      hasSubmittedVoiceRef.current = false;
+      finalTranscriptRef.current = "";
+      setNewMessage("");
+      setVoiceError("");
       try {
-        userCancelledVoiceRef.current = false;
-        hasSubmittedVoiceRef.current = false;
-        accumulatedTranscriptRef.current = "";
-        setNewMessage("");
         recognitionRef.current.start();
       } catch (err) {
         console.warn("Recognition start issue:", err);
@@ -429,9 +541,7 @@ export const Chat = () => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore
-      }
+      } catch (e) {}
     }
     setVoiceState("idle");
   };
@@ -441,39 +551,21 @@ export const Chat = () => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore
-      }
+      } catch (e) {}
     }
-    const textToSubmit = accumulatedTranscriptRef.current.trim() || newMessage.trim();
+    const textToSubmit = finalTranscriptRef.current.trim() || newMessage.trim();
     if (textToSubmit && !hasSubmittedVoiceRef.current) {
       hasSubmittedVoiceRef.current = true;
-      setVoiceState("idle");
+      setVoiceState("processing");
       submitMessage(textToSubmit);
+      finalTranscriptRef.current = "";
+      setTimeout(() => {
+        setVoiceState("idle");
+      }, 400);
     }
   };
 
-  // 5. Speech Synthesis (Read aloud)
-  const speakReply = (text) => {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1.0;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const stopSpeaking = () => {
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    }
-  };
-
-  // 6. Face-API lazy loading
+  // 7. Face-API lazy loading
   useEffect(() => {
     let isMounted = true;
     const loadModels = async () => {
@@ -493,7 +585,7 @@ export const Chat = () => {
     };
   }, []);
 
-  // 7. Camera controls (Explicit, Optional, Private, 100% On-Device)
+  // 8. Camera controls (Explicit, Optional, Private, 100% On-Device)
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -565,10 +657,11 @@ export const Chat = () => {
     return () => {
       stopCamera();
       stopSpeaking();
+      if (pendingAiTimerRef.current) clearTimeout(pendingAiTimerRef.current);
     };
-  }, []);
+  }, [stopSpeaking]);
 
-  // 8. Load User's Chat List from Firestore (Safe query without composite index requirement)
+  // 9. Load User's Chat List from Firestore (Safe query without composite index requirement)
   useEffect(() => {
     if (!currentUser?.uid) return;
     setLoadingChats(true);
@@ -595,9 +688,9 @@ export const Chat = () => {
         setChats(list);
         setLoadingChats(false);
 
-        if (list.length > 0 && !currentChatId) {
+        if (list.length > 0 && !currentChatIdRef.current) {
           setCurrentChatId(list[0].id);
-        } else if (list.length === 0 && !currentChatId) {
+        } else if (list.length === 0 && !currentChatIdRef.current) {
           createNewChat();
         }
       },
@@ -610,7 +703,7 @@ export const Chat = () => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 9. Load Current Chat Messages
+  // 10. Load Current Chat Messages
   useEffect(() => {
     if (!currentChatId) return;
     setLoadingMessages(true);
@@ -647,9 +740,9 @@ export const Chat = () => {
     );
 
     return () => unsubscribe();
-  }, [currentChatId]);
+  }, [currentChatId, setSupportLevel]);
 
-  // 10. Create New Chat
+  // 11. Create New Chat
   const createNewChat = async () => {
     if (!currentUser) return;
     try {
@@ -713,13 +806,11 @@ export const Chat = () => {
   // Explicit Send Message (Form submit)
   const handleSendMessage = async (e) => {
     e?.preventDefault();
-    if (voiceState === "listening" && recognitionRef.current) {
+    if ((voiceState === "listening" || voiceState === "processing") && recognitionRef.current) {
       userCancelledVoiceRef.current = true;
       try {
         recognitionRef.current.stop();
-      } catch (err) {
-        // Ignore
-      }
+      } catch (err) {}
       setVoiceState("idle");
     }
     await submitMessage(newMessage);
@@ -1112,6 +1203,7 @@ export const Chat = () => {
               ))
             )}
 
+            {/* Live Typing / Loading Indicator */}
             {isAiReplying && (
               <div className={`self-start p-4 rounded-3xl ${theme.cardBg} border ${theme.border} flex items-center gap-2 text-xs ${theme.textSecondary}`}>
                 <Sparkles size={14} className="animate-pulse" />
@@ -1123,7 +1215,7 @@ export const Chat = () => {
           </div>
         </div>
 
-        {/* Voice Input Listening Status Notice with Instant Send & Cancel */}
+        {/* Voice Input Listening / Processing Status Notice */}
         {voiceState === "listening" && (
           <div className="px-6 py-2.5 bg-emerald-600 text-white text-xs flex items-center justify-between z-20 shadow-md">
             <div className="flex items-center gap-2">
@@ -1151,6 +1243,13 @@ export const Chat = () => {
           </div>
         )}
 
+        {voiceState === "processing" && (
+          <div className="px-6 py-2 bg-teal-600 text-white text-xs flex items-center gap-2 z-20 shadow-md">
+            <Loader2 size={14} className="animate-spin" />
+            <span className="font-bold">Processing voice transcript... Submitting message.</span>
+          </div>
+        )}
+
         {voiceError && (
           <div className="px-6 py-2 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs font-medium">
             {voiceError}
@@ -1171,10 +1270,16 @@ export const Chat = () => {
                 title={
                   voiceState === "listening"
                     ? "Listening... Tap to cancel voice input"
+                    : voiceState === "processing"
+                    ? "Processing voice..."
                     : "Tap to speak (auto-submits when done speaking)"
                 }
                 className={`p-3 rounded-2xl border transition cursor-pointer shrink-0 ${
-                  voiceState === "listening" ? theme.micActive : theme.micButton
+                  voiceState === "listening"
+                    ? theme.micActive
+                    : voiceState === "processing"
+                    ? "bg-teal-500 text-white animate-pulse"
+                    : theme.micButton
                 }`}
                 aria-label="Toggle voice input"
               >
@@ -1190,6 +1295,8 @@ export const Chat = () => {
               placeholder={
                 voiceState === "listening"
                   ? "Listening to speech (auto-submits when you stop)..."
+                  : voiceState === "processing"
+                  ? "Submitting spoken message..."
                   : "Type what's on your mind or tap the mic..."
               }
               className={`w-full rounded-2xl px-5 py-3.5 text-sm sm:text-base outline-none border transition shadow-xs font-normal ${theme.input}`}

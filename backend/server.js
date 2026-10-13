@@ -24,20 +24,22 @@ const WELLNESS_SYSTEM_INSTRUCTION = `You are CalmChain, an empathetic, calm AI m
 CRITICAL CONVERSATIONAL RULES:
 1. Keep replies SHORT, SIMPLE, AND NATURAL (typically 1 to 4 sentences, roughly 20 to 60 words for ordinary messages).
 2. Never produce long walls of text, robotic intros, or repetitive boilerplate like "Tell me more, I'm listening".
-3. Respond directly to what the user actually said with warmth and validation. Ask ONE useful follow-up question when appropriate.
-4. If the user explicitly asks for detailed explanations or a guided exercise, provide appropriate detail because it was requested.
-5. You are NOT a doctor, psychiatrist, or licensed clinical therapist. Never make medical or psychiatric diagnoses.
-6. If the user expresses imminent self-harm, suicide, or crisis, calmly ask: "Are you in immediate danger right now?" and remind them that free, confidential help is available 24/7 (Tele-MANAS: 14416, Emergency: 112).`;
+3. Respond directly to what the user actually said with warmth, validation, and emotional presence. Ask ONE gentle follow-up question when appropriate.
+4. Use the recent conversation context to maintain a coherent, meaningful dialogue instead of treating each message in isolation.
+5. If the user explicitly asks for detailed explanations, exercises, or tools, provide appropriate detail as requested.
+6. You are NOT a doctor, psychiatrist, or licensed clinical therapist. Never make medical or psychiatric diagnoses.
+7. If the user expresses imminent self-harm, suicide, or crisis, calmly ask: "Are you in immediate danger right now?" and remind them that free, confidential help is available 24/7 (Tele-MANAS: 14416, Emergency: 112).`;
 
 /**
  * Generate concise, empathetic response using configured AI Provider or topic-aware wellness engine.
+ * Accepts conversation history for multi-turn context.
  */
-async function generateAiResponse(text, userEmotion, riskAssessment) {
+async function generateAiResponse(text, userEmotion, riskAssessment, chatHistory = []) {
   // Input validation
   if (!text || typeof text !== "string") {
     return "I'm here with you. Take a steady breath whenever you're ready to share.";
   }
-  const cleanText = text.trim().slice(0, 1000); // Guard max length
+  const cleanText = text.trim().slice(0, 1000);
 
   // --------------------------------------------------------------------------
   // LEVEL 3 SAFETY PROTOCOL (Immediate priority)
@@ -53,15 +55,30 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
     try {
       const apiKey = process.env.GEMINI_API_KEY;
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      const payload = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: `${WELLNESS_SYSTEM_INSTRUCTION}\n\nSupport Level: Level ${riskAssessment.level}\nUser message: "${cleanText}"\nReply (1-3 sentences, warm, specific to their message):` }
-            ]
+
+      const contents = [];
+      if (Array.isArray(chatHistory) && chatHistory.length > 0) {
+        chatHistory.slice(-4).forEach((m) => {
+          if (m.text && typeof m.text === "string") {
+            contents.push({
+              role: m.sender === "user" ? "user" : "model",
+              parts: [{ text: m.text.slice(0, 400) }]
+            });
           }
-        ],
+        });
+      }
+
+      contents.push({
+        role: "user",
+        parts: [
+          {
+            text: `${WELLNESS_SYSTEM_INSTRUCTION}\n\nSupport Level: Level ${riskAssessment.level}\nUser message: "${cleanText}"\nReply (1-3 sentences, warm, empathetic, directly addressing their message):`
+          }
+        ]
+      });
+
+      const payload = {
+        contents,
         generationConfig: {
           maxOutputTokens: 120,
           temperature: 0.7
@@ -79,15 +96,29 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
   // 2. Groq Provider
   if ((provider === "groq" || process.env.GROQ_API_KEY) && process.env.GROQ_API_KEY) {
     try {
+      const messages = [
+        { role: "system", content: `${WELLNESS_SYSTEM_INSTRUCTION}\nSupport Level: Level ${riskAssessment.level}` }
+      ];
+
+      if (Array.isArray(chatHistory) && chatHistory.length > 0) {
+        chatHistory.slice(-4).forEach((m) => {
+          if (m.text && typeof m.text === "string") {
+            messages.push({
+              role: m.sender === "user" ? "user" : "assistant",
+              content: m.text.slice(0, 400)
+            });
+          }
+        });
+      }
+
+      messages.push({ role: "user", content: cleanText });
+
       const res = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
           model: "llama-3.1-8b-instant",
-          messages: [
-            { role: "system", content: `${WELLNESS_SYSTEM_INSTRUCTION}\nSupport Level: Level ${riskAssessment.level}` },
-            { role: "user", content: cleanText }
-          ],
-          max_tokens: 100,
+          messages,
+          max_tokens: 110,
           temperature: 0.7
         },
         {
@@ -105,15 +136,29 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
   // 3. OpenAI Provider
   if ((provider === "openai" || process.env.OPENAI_API_KEY) && process.env.OPENAI_API_KEY) {
     try {
+      const messages = [
+        { role: "system", content: `${WELLNESS_SYSTEM_INSTRUCTION}\nSupport Level: Level ${riskAssessment.level}` }
+      ];
+
+      if (Array.isArray(chatHistory) && chatHistory.length > 0) {
+        chatHistory.slice(-4).forEach((m) => {
+          if (m.text && typeof m.text === "string") {
+            messages.push({
+              role: m.sender === "user" ? "user" : "assistant",
+              content: m.text.slice(0, 400)
+            });
+          }
+        });
+      }
+
+      messages.push({ role: "user", content: cleanText });
+
       const res = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
           model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: `${WELLNESS_SYSTEM_INSTRUCTION}\nSupport Level: Level ${riskAssessment.level}` },
-            { role: "user", content: cleanText }
-          ],
-          max_tokens: 100,
+          messages,
+          max_tokens: 110,
           temperature: 0.7
         },
         {
@@ -129,11 +174,28 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
   }
 
   // --------------------------------------------------------------------------
-  // 4. Topic-Aware Empathetic Mental Wellness Engine
+  // 4. Topic-Aware Empathetic Mental Wellness Engine (Fallback & Contextual)
   // Generates specific, comforting, non-repetitive responses tailored to the
-  // user's actual emotion and subject.
+  // user's actual emotion, subject, and conversational momentum.
   // --------------------------------------------------------------------------
   const lower = cleanText.toLowerCase();
+
+  // Short conversational affirmations / feedback
+  if (/^(thank you|thanks|thx|thank u)\b/i.test(lower)) {
+    return "You're so welcome 💙 Remember that taking care of yourself is a journey, and you're taking meaningful steps today. I'm right here whenever you want to talk.";
+  }
+  if (/^(yes|yeah|yep|sure|ok|okay)\b/i.test(lower) && cleanText.length < 15) {
+    return "I'm right here with you. Take all the time you need — what feels like the most helpful thing to focus on next?";
+  }
+  if (/^(no|nope|not really|nah)\b/i.test(lower) && cleanText.length < 15) {
+    return "That is completely fine. We don't have to push anything. We can just rest quietly together in this sanctuary, or try a gentle breathing exercise whenever you feel like it.";
+  }
+  if (lower.includes("don't know") || lower.includes("dont know") || lower.includes("not sure") || lower.includes("confused")) {
+    return "It's completely okay not to know. Feelings don't always come with neat answers. You don't have to carry any expectations here — what does your body feel like right now?";
+  }
+  if (lower.includes("can you help") || lower.includes("need help") || lower === "help") {
+    return "I am right here with you 💙 Let's take one gentle breath together. Tell me what feels heaviest right now, and we'll take it one step at a time.";
+  }
 
   // Breathing / Grounding tool request
   if (lower.includes("breathing") || lower.includes("grounding") || lower.includes("calm down")) {
@@ -142,29 +204,29 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
 
   // LEVEL 2 TOPICS: Stress, Heartbreak, Exams, Loneliness, Overthinking, Anger, Crying
   if (riskAssessment.level === 2) {
-    if (lower.includes("breakup") || lower.includes("hurt") || lower.includes("heartbroken") || lower.includes("relationship")) {
+    if (/\b(exam|exams|study|studies|studying|college|school|semester|test|tests|marks|grades|assignment|homework)\b/i.test(lower)) {
+      return "Exam and academic stress can feel like a heavy weight, but remember you don't have to carry the whole semester at once. Let's take it one concept at a time. What is worrying you most right now?";
+    }
+    if (/\b(breakup|broke up|heartbroken|ex-partner|my ex|ex-boyfriend|ex-girlfriend)\b/i.test(lower)) {
       return "Going through a breakup is deeply painful, and it's completely okay to feel hurt right now 💙 Be gentle with yourself today. What part feels most difficult to sit with at this moment?";
     }
-    if (lower.includes("exam") || lower.includes("study") || lower.includes("studies") || lower.includes("college") || lower.includes("test")) {
-      return "Exam stress can feel like a heavy weight, but remember you don't have to carry the whole semester at once. Let's take it one concept at a time. What is worrying you most right now?";
-    }
-    if (lower.includes("lonely") || lower.includes("isolated") || lower.includes("alone") || lower.includes("nobody")) {
+    if (/\b(lonely|loneliness|isolated|isolation|alone|nobody)\b/i.test(lower)) {
       return "Feeling lonely can ache in a very quiet way, but you are not alone in this space 💙 I'm right here with you. What usually brings you a tiny bit of comfort when loneliness hits?";
     }
-    if (lower.includes("overthinking") || lower.includes("racing") || lower.includes("anxious") || lower.includes("panic") || lower.includes("tension")) {
+    if (/\b(overthinking|racing thoughts|anxious|anxiety|panic|panicking|tension|nervous|worry|worried)\b/i.test(lower)) {
       return "When anxiety and overthinking take over, let's ground your senses. Feel your feet resting on the floor and take three long, slow exhalations. What specific thought is looping right now?";
     }
-    if (lower.includes("cry") || lower.includes("crying") || lower.includes("sad") || lower.includes("tears")) {
-      return "Crying is your nervous system's way of releasing built-up tension, so please don't hold it back. It's okay to feel sad. Would you like to tell me what triggered these feelings?";
+    if (/\b(cry|crying|tears|sad|sadness|unhappy|down|depressed)\b/i.test(lower)) {
+      return "Crying and sadness are your nervous system's way of releasing built-up tension, so please don't hold it back. It's okay to feel down. Would you like to tell me what triggered these feelings?";
     }
-    if (lower.includes("angry") || lower.includes("frustrated") || lower.includes("mad") || lower.includes("furious")) {
+    if (/\b(angry|anger|frustrated|frustration|mad|furious|annoyed)\b/i.test(lower)) {
       return "It makes sense that you're feeling frustrated — anger often shows up when things feel unfair or overwhelming. Take a moment to let that out. What happened that made you feel this way?";
     }
-    if (lower.includes("sleep") || lower.includes("insomnia") || lower.includes("tired")) {
+    if (/\b(sleep|insomnia|tired|exhausted|awake|sleepless)\b/i.test(lower)) {
       return "When tension keeps you awake, try relaxing your jaw and dropping your shoulders right now. Rest is still valuable even if sleep is delayed. How long have you been having trouble sleeping?";
     }
-    if (lower.includes("overwhelmed") || lower.includes("too much") || lower.includes("giving up") || lower.includes("future")) {
-      return "When everything feels like too much, we only need to survive the next five minutes. You don't have to figure out your entire future today. What is the single smallest thing on your mind right now?";
+    if (/\b(overwhelmed|too much|giving up|future)\b/i.test(lower)) {
+      return "When everything feels like too much, we only need to take the next five minutes. You don't have to figure out your entire future today. What is the single smallest thing on your mind right now?";
     }
     return "I hear how heavy this feels for you right now 💚 Thank you for having the courage to share it. Let's take a slow breath together — what feels like the hardest part at this moment?";
   }
@@ -176,10 +238,10 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
   if (lower.includes("excited") || lower.includes("nice day") || lower.includes("better")) {
     return "That's wonderful to hear! Having something to look forward to brings so much light. What's making you feel excited?";
   }
-  if (/^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(lower)) {
+  if (/^(hi|hello|hey|good morning|good afternoon|good evening|howdy)\b/i.test(lower)) {
     return "Hi 🌿 Welcome to your calm sanctuary. How is your heart and mind feeling today?";
   }
-  if (lower.includes("homework") || lower.includes("work") || lower.includes("day") || lower.includes("talk")) {
+  if (lower.includes("homework") || lower.includes("work") || lower.includes("project") || lower.includes("day") || lower.includes("talk")) {
     return "I'm listening and right here with you. What would you like to explore or share today?";
   }
 
@@ -191,7 +253,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "healthy",
     service: "CalmChain Wellness Server",
-    aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || process.env.HF_TOKEN),
+    aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY),
     provider: process.env.AI_PROVIDER || "offline",
     timestamp: new Date().toISOString()
   });
@@ -199,13 +261,13 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { userId, text, emotion } = req.body;
+    const { userId, text, emotion, history } = req.body;
     if (!text || typeof text !== "string") {
       return res.status(400).json({ error: "Text message is required" });
     }
 
     const risk = assessSupportLevel(text, emotion);
-    const aiText = await generateAiResponse(text, emotion, risk);
+    const aiText = await generateAiResponse(text, emotion, risk, history);
 
     return res.json({
       userId,
@@ -241,11 +303,11 @@ io.on("connection", (socket) => {
 
   socket.on("sendMessage", async (data) => {
     try {
-      const { userId, text, emotion } = data || {};
+      const { userId, text, emotion, history } = data || {};
       if (!userId || !text) return;
 
       const risk = assessSupportLevel(text, emotion);
-      const aiReply = await generateAiResponse(text, emotion, risk);
+      const aiReply = await generateAiResponse(text, emotion, risk, history);
 
       const responsePayload = {
         userId,
