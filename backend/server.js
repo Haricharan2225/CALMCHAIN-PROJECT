@@ -4,6 +4,7 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const axios = require("axios");
 require("dotenv").config();
+const { assessSupportLevel } = require("./classifier");
 
 const app = express();
 app.use(cors());
@@ -18,60 +19,23 @@ const io = new Server(server, {
   }
 });
 
-// System prompt enforcing mental wellness boundaries
-const WELLNESS_SYSTEM_INSTRUCTION = `You are CalmChain (TranquilNet), an empathetic, calm, and non-judgmental AI mental wellness companion.
-Your role is to offer supportive listening, validation, and gentle grounding guidance.
-IMPORTANT RULES:
-1. You are NOT a doctor, psychiatrist, or licensed medical therapist. Never claim to diagnose mental health conditions or prescribe medical treatment.
-2. Keep your replies concise (2 to 4 sentences), soothing, and easy to read.
-3. Validate user feelings without judgment. Encourage mindfulness, deep breathing, or healthy grounding techniques when appropriate.
-4. If the user expresses thoughts of suicide, self-harm, or severe danger, prioritize their safety: encourage them warmly to reach out for immediate human assistance, and remind them that they are not alone. Never promise secrecy around self-harm.`;
+// Concise, empathetic mental wellness system instructions
+const WELLNESS_SYSTEM_INSTRUCTION = `You are CalmChain, an empathetic, calm AI mental wellness companion.
+CRITICAL CONVERSATIONAL RULES:
+1. Keep replies SHORT, SIMPLE, AND NATURAL (typically 1 to 4 sentences, roughly 20 to 60 words for ordinary messages).
+2. Never produce long walls of text, robotic intros, or repetitive boilerplate like "Tell me more, I'm listening".
+3. Respond directly to what the user actually said with warmth and validation. Ask ONE useful follow-up question when appropriate.
+4. If the user explicitly asks for detailed explanations or a guided exercise, provide appropriate detail because it was requested.
+5. You are NOT a doctor, psychiatrist, or licensed clinical therapist. Never make medical or psychiatric diagnoses.
+6. If the user expresses imminent self-harm, suicide, or crisis, calmly ask: "Are you in immediate danger right now?" and remind them that free, confidential help is available 24/7 (Tele-MANAS: 14416, Emergency: 112).`;
 
-// Multi-signal risk assessment
-function assessRiskLevel(text, clientEmotion = "calm") {
-  const lower = (text || "").toLowerCase().trim();
-  
-  const level3Keywords = [
-    "suicide", "suicidal", "sucide", "kill myself", "end my life", "ending my life",
-    "end it all", "want to die", "dont want to live", "don't want to live",
-    "hang myself", "slit my", "overdose", "cant live anymore", "can't live anymore",
-    "no reason to live", "better off dead"
-  ];
-
-  const level2Keywords = [
-    "depressed", "depression", "panic attack", "anxiety", "anxious", "overwhelmed",
-    "lonely", "hopeless", "crying", "cant breathe", "can't breathe", "suffocating",
-    "hate myself", "worthless", "exhausted", "burnout", "stressed out", "stress",
-    "hurting inside", "scared", "terrified", "lost"
-  ];
-
-  for (const kw of level3Keywords) {
-    if (lower.includes(kw)) {
-      return { level: 3, emotion: "danger" };
-    }
-  }
-
-  for (const kw of level2Keywords) {
-    if (lower.includes(kw)) {
-      return { level: 2, emotion: "warning" };
-    }
-  }
-
-  if (clientEmotion === "danger") return { level: 3, emotion: "danger" };
-  if (clientEmotion === "warning" || clientEmotion === "sad" || clientEmotion === "angry") {
-    return { level: 2, emotion: "warning" };
-  }
-
-  return { level: 1, emotion: "calm" };
-}
-
-// Generate empathetic response using configured AI Provider or Transparent Offline Mode
+// Generate concise empathetic response using configured AI Provider or Offline Engine
 async function generateAiResponse(text, userEmotion, riskAssessment) {
   const provider = (process.env.AI_PROVIDER || "offline").toLowerCase();
 
-  // If Level 3 is detected, safety response takes priority
+  // Urgent Level 3 Safety Protocol takes immediate priority
   if (riskAssessment.level === 3) {
-    return "I hear how much pain you're carrying right now, and I want you to know you are not alone 💙 Your safety matters deeply. Please reach out to someone who can help right now — you can call Tele-MANAS at 14416 or 112 immediately. We have resources ready on your screen.";
+    return "I hear how much pain you're carrying right now, and I want you to know you are not alone 💙 Are you in immediate danger right now? Please connect with someone who can help right now — you can call Tele-MANAS at 14416 or Emergency 112 immediately. We have resources ready on your screen.";
   }
 
   // 1. Google Gemini Provider
@@ -84,21 +48,19 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
           {
             role: "user",
             parts: [
-              { text: `${WELLNESS_SYSTEM_INSTRUCTION}\n\nUser expresses (${userEmotion || "unspecified"}): "${text}"\nRespond empathetically:` }
+              { text: `${WELLNESS_SYSTEM_INSTRUCTION}\n\nUser message: "${text}"\nReply (1-3 sentences, warm and concise):` }
             ]
           }
         ],
         generationConfig: {
-          maxOutputTokens: 180,
+          maxOutputTokens: 120,
           temperature: 0.7
         }
       };
 
-      const res = await axios.post(url, payload, { timeout: 8000 });
-      const candidates = res.data?.candidates;
-      if (candidates && candidates.length > 0 && candidates[0]?.content?.parts?.[0]?.text) {
-        return candidates[0].content.parts[0].text.trim();
-      }
+      const res = await axios.post(url, payload, { timeout: 7000 });
+      const candidate = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (candidate) return candidate.trim();
     } catch (err) {
       console.warn("Gemini API call failed, falling back to local wellness engine:", err?.message || err);
     }
@@ -115,17 +77,16 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
             { role: "system", content: WELLNESS_SYSTEM_INSTRUCTION },
             { role: "user", content: text }
           ],
-          max_tokens: 150,
+          max_tokens: 100,
           temperature: 0.7
         },
         {
           headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-          timeout: 8000
+          timeout: 7000
         }
       );
-      if (res.data?.choices?.[0]?.message?.content) {
-        return res.data.choices[0].message.content.trim();
-      }
+      const content = res.data?.choices?.[0]?.message?.content;
+      if (content) return content.trim();
     } catch (err) {
       console.warn("Groq API call failed, falling back to local wellness engine:", err?.message || err);
     }
@@ -142,66 +103,70 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
             { role: "system", content: WELLNESS_SYSTEM_INSTRUCTION },
             { role: "user", content: text }
           ],
-          max_tokens: 150,
+          max_tokens: 100,
           temperature: 0.7
         },
         {
           headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-          timeout: 8000
+          timeout: 7000
         }
       );
-      if (res.data?.choices?.[0]?.message?.content) {
-        return res.data.choices[0].message.content.trim();
-      }
+      const content = res.data?.choices?.[0]?.message?.content;
+      if (content) return content.trim();
     } catch (err) {
       console.warn("OpenAI API call failed, falling back to local wellness engine:", err?.message || err);
     }
   }
 
-  // 4. Hugging Face Inference API
-  if ((provider === "huggingface" || process.env.HF_TOKEN) && process.env.HF_TOKEN) {
-    try {
-      const model = process.env.HF_MODEL || "mistralai/Mistral-7B-Instruct-v0.2";
-      const res = await axios.post(
-        `https://api-inference.huggingface.co/models/${model}`,
-        {
-          inputs: `<s>[INST] <<SYS>>\n${WELLNESS_SYSTEM_INSTRUCTION}\n<</SYS>>\n\n${text} [/INST]`,
-          parameters: { max_new_tokens: 150, temperature: 0.7 }
-        },
-        {
-          headers: { Authorization: `Bearer ${process.env.HF_TOKEN}` },
-          timeout: 8000
-        }
-      );
-      if (Array.isArray(res.data) && res.data[0]?.generated_text) {
-        const full = res.data[0].generated_text;
-        const answer = full.split("[/INST]").pop()?.trim() || full;
-        return answer;
-      }
-    } catch (err) {
-      console.warn("Hugging Face API call failed, falling back to local wellness engine:", err?.message || err);
-    }
+  // 4. Transparent, Empathetic Offline Support Engine (Concise, Conversational, Human-Centric)
+  const lower = text.toLowerCase().trim();
+
+  // Greetings
+  if (/^(hi|hello|hey|good morning|good evening|good afternoon)\b/i.test(lower)) {
+    return "Hi 💚 I'm here with you. How are you feeling today?";
   }
 
-  // Transparent, Empathetic Offline Support Sanctuary Engine (Zero Mock Deception)
-  const lowerText = text.toLowerCase();
+  // Breathing / Grounding Request
+  if (lower.includes("breathing exercise") || lower.includes("breath exercise") || lower.includes("grounding")) {
+    return "Let's try box breathing: inhale gently for 4 seconds, hold for 4, exhale for 4, then pause for 4. Repeat gently a few times. You can also tap the Box Breathing tool in your sidebar whenever you like.";
+  }
+
+  // Bad day / tough day
+  if (lower.includes("bad day") || lower.includes("rough day") || lower.includes("terrible day") || lower.includes("awful day")) {
+    return "I'm sorry today was difficult. 💚 Want to tell me what happened?";
+  }
+
+  // Exam / college stress
+  if (lower.includes("exam") || lower.includes("study") || lower.includes("studies") || lower.includes("homework") || lower.includes("college")) {
+    return "That sounds stressful, but remember to take it one step at a time. What's worrying you most right now?";
+  }
+
+  // Presentation / public speaking
+  if (lower.includes("presentation") || lower.includes("nervous about")) {
+    return "It's completely natural to feel nervous before a presentation. Take a deep, slow breath right now. Would running through what you want to say help you feel more prepared?";
+  }
+
+  // Level 2 Elevated Distress
   if (riskAssessment.level === 2) {
-    return "Thank you for sharing that with me. It takes real courage to put heavy emotions into words. Remember to take a slow breath right now — you don't have to navigate everything all at once. What feels like the hardest part at this moment?";
+    if (lower.includes("lonely") || lower.includes("isolated") || lower.includes("nobody understands")) {
+      return "Feeling isolated is really tough, but you are not alone in this space 💙 I'm sitting right here with you. Would you like to share what's on your mind?";
+    }
+    if (lower.includes("overwhelmed") || lower.includes("too much") || lower.includes("giving up")) {
+      return "When everything piles up, it's exhausting. Let's pause together and take a slow breath. If you could set aside everything else, what is the single smallest thing we can focus on right now?";
+    }
+    if (lower.includes("panic") || lower.includes("anxiety") || lower.includes("overthinking")) {
+      return "When overthinking and anxiety rise, grounding can gently anchor you. Try placing both feet flat on the floor and taking 3 slow, deep breaths. I'm right here with you.";
+    }
+    return "I hear how heavy this feels right now. Thank you for sharing it with me 💚 Let's take it one gentle breath at a time. What feels like the hardest part at this moment?";
   }
 
-  if (lowerText.includes("anxious") || lowerText.includes("panic") || lowerText.includes("nervous")) {
-    return "When anxiety starts to feel overwhelming, grounding can help bring you back to the present. Try relaxing your shoulders and inhaling deeply for 4 counts, holding for 4, and exhaling for 4. I'm right here with you.";
+  // Good / positive / peaceful
+  if (lower.includes("happy") || lower.includes("good") || lower.includes("relaxed") || lower.includes("peaceful") || lower.includes("doing okay")) {
+    return "That's wonderful to hear 😊 What's brought you a feeling of calm or joy today?";
   }
 
-  if (lowerText.includes("sad") || lowerText.includes("lonely") || lowerText.includes("hurt")) {
-    return "I'm holding space for you today. It is completely okay to feel sad or tired. Please be gentle with yourself, and feel free to share whatever is on your mind whenever you're ready.";
-  }
-
-  if (lowerText.includes("happy") || lowerText.includes("good") || lowerText.includes("better") || lowerText.includes("peace")) {
-    return "It's wonderful to hear that you're feeling a sense of calm and positivity today 😊 What has brought you peace or joy recently?";
-  }
-
-  return "Thank you for reaching out to CalmChain today. I'm here to listen without judgment. How has your day been treating your heart and mind so far?";
+  // General conversational reply
+  return "I'm listening and holding space for you. How has your day been treating your heart and mind so far?";
 }
 
 // REST Endpoints
@@ -222,7 +187,7 @@ app.post("/api/chat", async (req, res) => {
       return res.status(400).json({ error: "Text message is required" });
     }
 
-    const risk = assessRiskLevel(text, emotion);
+    const risk = assessSupportLevel(text, emotion);
     const aiText = await generateAiResponse(text, emotion, risk);
 
     return res.json({
@@ -237,7 +202,7 @@ app.post("/api/chat", async (req, res) => {
     console.error("Error in /api/chat:", err);
     return res.status(500).json({
       error: "Internal wellness service error",
-      text: "I'm having a brief connection pause, but please take a steady breath. I am still here listening.",
+      text: "I'm here with you. Take a steady breath while we reconnect.",
       sender: "ai",
       emotion: "calm",
       level: 1,
@@ -250,7 +215,6 @@ app.post("/api/chat", async (req, res) => {
 io.on("connection", (socket) => {
   console.log(`[CalmChain] Client connected: ${socket.id}`);
 
-  // Allow client to join their dedicated personal room
   socket.on("join", (userId) => {
     if (userId) {
       socket.join(userId);
@@ -263,7 +227,7 @@ io.on("connection", (socket) => {
       const { userId, text, emotion } = data || {};
       if (!userId || !text) return;
 
-      const risk = assessRiskLevel(text, emotion);
+      const risk = assessSupportLevel(text, emotion);
       const aiReply = await generateAiResponse(text, emotion, risk);
 
       const responsePayload = {
@@ -275,7 +239,6 @@ io.on("connection", (socket) => {
         timestamp: new Date().toISOString()
       };
 
-      // Send response specifically to the sender's socket or room (NEVER broadcast to all sockets)
       if (userId) {
         io.to(userId).emit("receiveMessage", responsePayload);
       } else {

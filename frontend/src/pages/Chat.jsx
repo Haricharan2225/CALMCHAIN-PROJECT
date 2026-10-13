@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../context/ThemeContext";
+import { assessSupportLevel } from "../utils/classifier";
 import { db, auth } from "../firebase";
 import {
   collection,
@@ -36,19 +38,19 @@ import {
   X,
   PhoneCall,
   Sparkles,
-  HelpCircle
+  RotateCcw
 } from "lucide-react";
 import { EmergencyModal } from "../components/EmergencyModal";
 import { BreathingExerciseModal } from "../components/BreathingExerciseModal";
 import { MoodTrackerModal } from "../components/MoodTrackerModal";
 import { useNavigate } from "react-router-dom";
 
-// Initial system welcome message template
 const WELCOME_TEXT =
   "Hi, welcome to CalmChain 💙 This is your calm space. How are you feeling today? You can type your thoughts or use voice input whenever you feel comfortable.";
 
 export const Chat = () => {
   const { currentUser } = useAuth();
+  const { supportLevel, setSupportLevel, theme } = useTheme();
   const navigate = useNavigate();
 
   // Chats & Messages
@@ -71,14 +73,15 @@ export const Chat = () => {
   const [showCameraNotice, setShowCameraNotice] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Emotional & Support Levels (1: Calm, 2: Additional Support, 3: Safety Alert)
-  const [emotionLevel, setEmotionLevel] = useState(1);
-  const [levelAnalysis, setLevelAnalysis] = useState("");
-
-  // Voice Recognition (STT)
-  const [isListening, setIsListening] = useState(false);
+  // Voice Input (Auto-Send on final transcript)
+  // States: 'idle' | 'listening' | 'processing' | 'sending' | 'error'
+  const [voiceState, setVoiceState] = useState("idle");
   const [sttSupported, setSttSupported] = useState(true);
+  const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
+  const hasSubmittedVoiceRef = useRef(false);
+  const accumulatedTranscriptRef = useRef("");
+  const silenceTimerRef = useRef(null);
 
   // Speech Synthesis (TTS) - Optional audio readout
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -97,8 +100,6 @@ export const Chat = () => {
   // Refs
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
-  const sessionStartTime = useRef(Date.now());
-  const initialWelcomeCheckedRef = useRef({});
 
   // 1. Live Date & Time timer
   useEffect(() => {
@@ -121,7 +122,11 @@ export const Chat = () => {
 
   // 2. Initialize Socket.IO connection
   useEffect(() => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+    const backendUrl =
+      import.meta.env.VITE_API_URL ||
+      import.meta.env.VITE_BACKEND_URL ||
+      "http://localhost:5000";
+
     const s = io(backendUrl, {
       transports: ["websocket", "polling"],
       reconnectionAttempts: 5,
@@ -140,7 +145,7 @@ export const Chat = () => {
       setIsAiReplying(false);
 
       if (incoming.level) {
-        setEmotionLevel(incoming.level);
+        setSupportLevel(incoming.level);
         if (incoming.level === 3) setShowEmergency(true);
       }
 
@@ -148,16 +153,16 @@ export const Chat = () => {
         speakReply(incoming.text);
       }
 
-      // Append to Firestore document
       if (currentChatId) {
         try {
           const docRef = doc(db, "chats", currentChatId);
           const snap = await getDoc(docRef);
           if (snap.exists()) {
             const curMsgs = snap.data().messages || [];
-            // Prevent duplicate message IDs
             const alreadyExists = curMsgs.some(
-              (m) => m.text === incoming.text && Math.abs(new Date(m.timestamp) - new Date(incoming.timestamp)) < 2000
+              (m) =>
+                m.text === incoming.text &&
+                Math.abs(new Date(m.timestamp) - new Date(incoming.timestamp)) < 2000
             );
             if (!alreadyExists) {
               const aiMsg = {
@@ -187,32 +192,82 @@ export const Chat = () => {
     };
   }, [currentChatId, currentUser, ttsEnabled]);
 
-  // 3. Initialize Speech Recognition
+  // 3. VOICE INPUT WITH AUTOMATIC SEND AFTER SPEAKING
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
+      recognition.onstart = () => {
+        setVoiceState("listening");
+        setVoiceError("");
+        hasSubmittedVoiceRef.current = false;
+        accumulatedTranscriptRef.current = "";
+      };
+
       recognition.onresult = (event) => {
-        let transcript = "";
+        let interimText = "";
+        let finalChunk = "";
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalChunk += transcript;
+          } else {
+            interimText += transcript;
+          }
         }
-        if (transcript) {
-          setNewMessage((prev) => (prev ? `${prev} ${transcript}`.trim() : transcript));
+
+        if (finalChunk) {
+          accumulatedTranscriptRef.current = (
+            accumulatedTranscriptRef.current + " " + finalChunk
+          ).trim();
+          setNewMessage(accumulatedTranscriptRef.current);
+        } else if (interimText) {
+          setNewMessage(
+            (accumulatedTranscriptRef.current + " " + interimText).trim()
+          );
         }
+
+        // Reset silence timer: when user pauses for 1.8 seconds after speaking, auto-stop
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          if (voiceState === "listening" && accumulatedTranscriptRef.current.trim()) {
+            recognition.stop();
+          }
+        }, 1800);
       };
 
       recognition.onerror = (event) => {
-        console.warn("Speech recognition error:", event.error);
-        setIsListening(false);
+        console.warn("Speech recognition notice:", event.error);
+        if (event.error === "no-speech") {
+          setVoiceState("idle");
+        } else if (event.error === "not-allowed") {
+          setVoiceError("Microphone permission denied.");
+          setVoiceState("error");
+          setTimeout(() => setVoiceState("idle"), 3000);
+        } else {
+          setVoiceState("idle");
+        }
       };
 
       recognition.onend = () => {
-        setIsListening(false);
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+        const textToSend = accumulatedTranscriptRef.current.trim();
+        if (textToSend && !hasSubmittedVoiceRef.current) {
+          hasSubmittedVoiceRef.current = true;
+          setVoiceState("sending");
+          // Automatically send the message without requiring Send click!
+          handleSendVoiceMessage(textToSend);
+        } else {
+          setVoiceState("idle");
+        }
       };
 
       recognitionRef.current = recognition;
@@ -221,25 +276,88 @@ export const Chat = () => {
     }
 
     return () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
     };
-  }, []);
+  }, [currentChatId, currentUser]);
 
-  const toggleListening = () => {
+  const startVoiceInput = () => {
     if (!recognitionRef.current) return;
-    if (isListening) {
+    if (voiceState === "listening") {
       recognitionRef.current.stop();
-      setIsListening(false);
     } else {
       try {
+        hasSubmittedVoiceRef.current = false;
+        accumulatedTranscriptRef.current = "";
         recognitionRef.current.start();
-        setIsListening(true);
       } catch (err) {
-        console.warn("Could not start recognition:", err);
+        console.warn("Recognition start issue:", err);
       }
     }
+  };
+
+  const cancelVoiceInput = () => {
+    if (recognitionRef.current) {
+      hasSubmittedVoiceRef.current = true; // prevent auto-send
+      recognitionRef.current.abort();
+    }
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    accumulatedTranscriptRef.current = "";
+    setNewMessage("");
+    setVoiceState("idle");
+  };
+
+  // Helper function to auto-send the recognized speech transcript
+  const handleSendVoiceMessage = async (transcriptText) => {
+    if (!transcriptText || !currentChatId || !currentUser) {
+      setVoiceState("idle");
+      return;
+    }
+
+    // Automatically assess support level using centralized classifier
+    const assessed = assessSupportLevel(transcriptText);
+    setSupportLevel(assessed.level);
+    if (assessed.level === 3) setShowEmergency(true);
+
+    const userMsgObj = {
+      id: `user_${Date.now()}`,
+      text: transcriptText,
+      sender: "user",
+      emotion: assessed.emotion,
+      level: assessed.level,
+      timestamp: new Date().toISOString()
+    };
+
+    const updated = [...messages, userMsgObj];
+    setMessages(updated);
+    setNewMessage("");
+    setIsAiReplying(true);
+    setVoiceState("idle");
+
+    const isFirstUserMsg = !messages.some((m) => m.sender === "user");
+    const autoTitle = isFirstUserMsg
+      ? transcriptText.length > 30
+        ? `${transcriptText.slice(0, 30)}...`
+        : transcriptText
+      : null;
+
+    try {
+      const chatDocRef = doc(db, "chats", currentChatId);
+      const updatePayload = {
+        messages: updated,
+        updatedAt: new Date().toISOString(),
+        supportLevel: assessed.level
+      };
+      if (autoTitle) updatePayload.title = autoTitle;
+      await updateDoc(chatDocRef, updatePayload);
+    } catch (err) {
+      console.error("Error updating Firestore on voice send:", err);
+    }
+
+    // Emit to AI
+    dispatchAiRequest(transcriptText, assessed, updated);
   };
 
   // 4. Speech Synthesis (Read aloud)
@@ -273,7 +391,7 @@ export const Chat = () => {
         ]);
         if (isMounted) setModelsLoaded(true);
       } catch (err) {
-        console.warn("Face-API models loading deferred or unavailable:", err);
+        console.warn("Face-API models loading deferred:", err);
       }
     };
     loadModels();
@@ -295,7 +413,7 @@ export const Chat = () => {
       setCameraActive(true);
       setShowCameraNotice(false);
     } catch (err) {
-      console.warn("Camera access denied or device not found:", err);
+      console.warn("Camera access denied or unavailable:", err);
       alert("Camera permission was denied. You can continue typing or using voice input normally.");
       setCameraActive(false);
     }
@@ -313,7 +431,6 @@ export const Chat = () => {
     setDetectedExpression(null);
   };
 
-  // Local-only facial expression loop
   useEffect(() => {
     let interval = null;
     if (cameraActive && modelsLoaded) {
@@ -330,7 +447,7 @@ export const Chat = () => {
               setDetectedExpression(dominant);
             }
           } catch (e) {
-            // Silently swallow intermittent detection drops
+            // Silently ignore drop
           }
         }
       }, 3500);
@@ -340,7 +457,6 @@ export const Chat = () => {
     };
   }, [cameraActive, modelsLoaded]);
 
-  // Clean camera on unmount
   useEffect(() => {
     return () => {
       stopCamera();
@@ -370,7 +486,6 @@ export const Chat = () => {
         setChats(list);
         setLoadingChats(false);
 
-        // If no active chat selected yet, pick the first or create new
         if (list.length > 0 && !currentChatId) {
           setCurrentChatId(list[0].id);
         } else if (list.length === 0 && !currentChatId) {
@@ -401,16 +516,14 @@ export const Chat = () => {
           const msgs = data.messages || [];
           setMessages(msgs);
 
-          // Update emotion level based on messages
           if (msgs.length > 0) {
             const lastMsg = msgs[msgs.length - 1];
             if (lastMsg.level) {
-              setEmotionLevel(lastMsg.level);
+              setSupportLevel(lastMsg.level);
               if (lastMsg.level === 3) setShowEmergency(true);
             }
           }
 
-          // Auto-scroll to bottom
           setTimeout(() => {
             chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
           }, 100);
@@ -451,7 +564,7 @@ export const Chat = () => {
       });
 
       setCurrentChatId(newDoc.id);
-      setEmotionLevel(1);
+      setSupportLevel(1);
       setMobileSidebarOpen(false);
     } catch (err) {
       console.error("Error creating new chat:", err);
@@ -488,40 +601,73 @@ export const Chat = () => {
     return groups;
   }, [chats]);
 
-  // Risk detector for client safety
-  const detectLevel = (text) => {
-    const lower = (text || "").toLowerCase();
-    const l3Kw = [
-      "suicide", "suicidal", "sucide", "kill myself", "end my life", "ending my life",
-      "want to die", "end it all", "hang myself", "slit my", "overdose", "cant live anymore"
-    ];
-    if (l3Kw.some((kw) => lower.includes(kw))) return 3;
+  // AI dispatch helper (Socket.IO with REST fallback)
+  const dispatchAiRequest = async (text, assessed, currentMsgList) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit("sendMessage", {
+        userId: currentUser.uid,
+        text: text,
+        emotion: assessed.emotion
+      });
+    } else {
+      try {
+        const backendUrl =
+          import.meta.env.VITE_API_URL ||
+          import.meta.env.VITE_BACKEND_URL ||
+          "http://localhost:5000";
 
-    const l2Kw = [
-      "sad", "lonely", "stress", "depressed", "depression", "panic", "anxiety",
-      "anxious", "overwhelmed", "hopeless", "crying", "worthless", "exhausted", "burnout"
-    ];
-    if (l2Kw.some((kw) => lower.includes(kw))) return 2;
+        const res = await fetch(`${backendUrl}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser.uid,
+            text: text,
+            emotion: assessed.emotion
+          })
+        });
 
-    return 1;
+        if (res.ok) {
+          const data = await res.json();
+          setIsAiReplying(false);
+          const aiMsgObj = {
+            id: `ai_${Date.now()}`,
+            text: data.text,
+            sender: "ai",
+            emotion: data.emotion || "calm",
+            level: data.level || 1,
+            timestamp: new Date().toISOString()
+          };
+          const withAi = [...currentMsgList, aiMsgObj];
+          await updateDoc(doc(db, "chats", currentChatId), {
+            messages: withAi,
+            updatedAt: new Date().toISOString(),
+            supportLevel: data.level || 1
+          });
+          if (ttsEnabled && data.text) speakReply(data.text);
+        }
+      } catch (restErr) {
+        console.warn("REST fallback notice:", restErr);
+        setIsAiReplying(false);
+      }
+    }
   };
 
-  // 10. Send Message
+  // 10. Manual Send Message (Typed text)
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     const trimmed = newMessage.trim();
     if (!trimmed || !currentChatId || !currentUser) return;
 
-    const detectedLvl = detectLevel(trimmed);
-    setEmotionLevel(detectedLvl);
-    if (detectedLvl === 3) setShowEmergency(true);
+    const assessed = assessSupportLevel(trimmed);
+    setSupportLevel(assessed.level);
+    if (assessed.level === 3) setShowEmergency(true);
 
     const userMsgObj = {
       id: `user_${Date.now()}`,
       text: trimmed,
       sender: "user",
-      emotion: detectedLvl === 3 ? "danger" : detectedLvl === 2 ? "warning" : "calm",
-      level: detectedLvl,
+      emotion: assessed.emotion,
+      level: assessed.level,
       timestamp: new Date().toISOString()
     };
 
@@ -530,7 +676,6 @@ export const Chat = () => {
     setNewMessage("");
     setIsAiReplying(true);
 
-    // Compute dynamic chat title if this is the first user message
     const isFirstUserMsg = !messages.some((m) => m.sender === "user");
     const autoTitle = isFirstUserMsg
       ? trimmed.length > 30
@@ -543,7 +688,7 @@ export const Chat = () => {
       const updatePayload = {
         messages: updated,
         updatedAt: new Date().toISOString(),
-        supportLevel: detectedLvl
+        supportLevel: assessed.level
       };
       if (autoTitle) updatePayload.title = autoTitle;
       await updateDoc(chatDocRef, updatePayload);
@@ -551,50 +696,7 @@ export const Chat = () => {
       console.error("Error updating Firestore on message send:", err);
     }
 
-    // Emit via Socket.IO
-    if (socketRef.current?.connected) {
-      socketRef.current.emit("sendMessage", {
-        userId: currentUser.uid,
-        text: trimmed,
-        emotion: userMsgObj.emotion
-      });
-    } else {
-      // Fallback to REST endpoint
-      try {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-        const res = await fetch(`${backendUrl}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: currentUser.uid,
-            text: trimmed,
-            emotion: userMsgObj.emotion
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setIsAiReplying(false);
-          const aiMsgObj = {
-            id: `ai_${Date.now()}`,
-            text: data.text,
-            sender: "ai",
-            emotion: data.emotion || "calm",
-            level: data.level || 1,
-            timestamp: new Date().toISOString()
-          };
-          const withAi = [...updated, aiMsgObj];
-          await updateDoc(doc(db, "chats", currentChatId), {
-            messages: withAi,
-            updatedAt: new Date().toISOString(),
-            supportLevel: data.level || 1
-          });
-          if (ttsEnabled && data.text) speakReply(data.text);
-        }
-      } catch (restErr) {
-        console.warn("REST fallback error:", restErr);
-        setIsAiReplying(false);
-      }
-    }
+    dispatchAiRequest(trimmed, assessed, updated);
   };
 
   // 11. Edit Message
@@ -602,12 +704,13 @@ export const Chat = () => {
     if (!editText.trim() || !currentChatId) return;
     const updatedMessages = messages.map((m) => {
       if (m.id === msgId) {
-        const newLvl = detectLevel(editText);
+        const assessed = assessSupportLevel(editText);
+        setSupportLevel(assessed.level);
         return {
           ...m,
           text: editText,
-          level: newLvl,
-          emotion: newLvl === 3 ? "danger" : newLvl === 2 ? "warning" : "calm",
+          level: assessed.level,
+          emotion: assessed.emotion,
           edited: true
         };
       }
@@ -643,55 +746,43 @@ export const Chat = () => {
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#0B1120] text-slate-100 font-['Inter'] relative overflow-hidden select-none">
-      {/* Dynamic Ambient Calming Halo */}
+    <div className={`flex h-screen w-full ${theme.pageBg} ${theme.textPrimary} font-['Inter'] relative overflow-hidden select-none transition-colors duration-500`}>
+      {/* Ambient Theme Lighting Halos */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
         <div
-          className={`absolute -top-[15%] -left-[10%] w-[55%] h-[55%] blur-[140px] rounded-full transition-colors duration-1000 ${
-            emotionLevel === 3
-              ? "bg-rose-600/15"
-              : emotionLevel === 2
-              ? "bg-amber-500/15"
-              : "bg-teal-500/10"
-          }`}
+          className={`absolute -top-[15%] -left-[10%] w-[55%] h-[55%] blur-[140px] rounded-full transition-colors duration-700 ${theme.orb1}`}
         />
         <div
-          className={`absolute bottom-[-10%] -right-[10%] w-[50%] h-[55%] blur-[150px] rounded-full transition-colors duration-1000 ${
-            emotionLevel === 3
-              ? "bg-red-700/15"
-              : emotionLevel === 2
-              ? "bg-yellow-600/15"
-              : "bg-cyan-600/10"
-          }`}
+          className={`absolute bottom-[-10%] -right-[10%] w-[50%] h-[55%] blur-[150px] rounded-full transition-colors duration-700 ${theme.orb2}`}
         />
       </div>
 
       {/* Mobile Sidebar Overlay */}
       {mobileSidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm md:hidden"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-72 bg-slate-900/90 backdrop-blur-2xl border-r border-slate-800/80 flex flex-col shadow-2xl transition-transform duration-300 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-72 ${theme.sidebarBg} backdrop-blur-2xl border-r ${theme.border} flex flex-col shadow-xl transition-all duration-300 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
+        <div className={`p-5 border-b ${theme.border} flex items-center justify-between`}>
           <div className="flex items-center gap-3">
-            <img src="/calmchain-logo.svg" alt="CalmChain Logo" className="w-9 h-9 drop-shadow-md" />
+            <img src="/calmchain-logo.svg" alt="CalmChain Logo" className="w-9 h-9 drop-shadow-sm" />
             <div>
-              <h1 className="text-xl font-black text-white font-['Outfit'] tracking-tight">CalmChain</h1>
-              <p className="text-[11px] text-teal-400 font-semibold">Tranquil Sanctuary</p>
+              <h1 className="text-xl font-black font-['Outfit'] tracking-tight">CalmChain</h1>
+              <p className={`text-[11px] font-bold ${theme.textSecondary}`}>{theme.name}</p>
             </div>
           </div>
           <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="md:hidden p-1 text-slate-400 hover:text-white"
+            className="md:hidden p-1 text-slate-500 hover:text-slate-900"
           >
             <X size={20} />
           </button>
@@ -701,7 +792,7 @@ export const Chat = () => {
         <div className="p-4">
           <button
             onClick={createNewChat}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-teal-500/20 to-cyan-500/20 hover:from-teal-500/30 hover:to-cyan-500/30 text-teal-300 border border-teal-500/40 rounded-2xl font-bold text-sm transition shadow-lg shadow-teal-500/5 cursor-pointer"
+            className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-sm transition shadow-sm border ${theme.accentSecondaryButton} cursor-pointer`}
           >
             <PlusCircle size={18} /> New Conversation
           </button>
@@ -711,9 +802,9 @@ export const Chat = () => {
         <div className="flex-1 overflow-y-auto px-3 space-y-4 text-xs">
           {loadingChats ? (
             <div className="space-y-2 p-2">
-              <div className="h-10 bg-slate-800/60 rounded-xl animate-pulse" />
-              <div className="h-10 bg-slate-800/60 rounded-xl animate-pulse" />
-              <div className="h-10 bg-slate-800/60 rounded-xl animate-pulse" />
+              <div className="h-10 bg-slate-200/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-slate-200/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-slate-200/50 rounded-xl animate-pulse" />
             </div>
           ) : chats.length === 0 ? (
             <div className="text-center py-10 text-slate-500 text-xs">
@@ -724,7 +815,7 @@ export const Chat = () => {
               if (chatList.length === 0) return null;
               return (
                 <div key={groupTitle} className="space-y-1">
-                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${theme.textMuted}`}>
                     {groupTitle}
                   </div>
                   {chatList.map((chat) => (
@@ -734,13 +825,13 @@ export const Chat = () => {
                         setCurrentChatId(chat.id);
                         setMobileSidebarOpen(false);
                       }}
-                      className={`w-full p-3 rounded-xl flex items-center gap-2.5 text-left transition truncate cursor-pointer ${
+                      className={`w-full p-3 rounded-xl flex items-center gap-2.5 text-left transition truncate cursor-pointer border ${
                         currentChatId === chat.id
-                          ? "bg-slate-800 text-white font-semibold border border-slate-700 shadow-sm"
-                          : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                          ? `${theme.activeItem} shadow-xs`
+                          : `${theme.inactiveItem} border-transparent`
                       }`}
                     >
-                      <MessageSquare size={15} className="shrink-0 text-teal-400" />
+                      <MessageSquare size={15} className="shrink-0" />
                       <span className="truncate flex-1">
                         {chat.title || "Conversation"}
                       </span>
@@ -753,89 +844,78 @@ export const Chat = () => {
         </div>
 
         {/* Sidebar Tools Navigation */}
-        <div className="p-3 border-t border-slate-800/80 space-y-1 bg-slate-950/40 text-xs font-semibold">
+        <div className={`p-3 border-t ${theme.border} space-y-1 text-xs font-semibold`}>
           <button
             onClick={() => setShowBreathing(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-teal-300 hover:bg-teal-500/10 transition text-left cursor-pointer"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer ${theme.inactiveItem}`}
           >
             <Wind size={16} /> Box Breathing Grounding
           </button>
           <button
             onClick={() => setShowMoodTracker(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-cyan-300 hover:bg-cyan-500/10 transition text-left cursor-pointer"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer ${theme.inactiveItem}`}
           >
             <Smile size={16} /> Daily Mood Tracker
           </button>
           <button
             onClick={() => setShowEmergency(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10 transition text-left cursor-pointer"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer text-rose-700 hover:bg-rose-50`}
           >
             <PhoneCall size={16} /> Emergency Helplines
           </button>
         </div>
 
         {/* User Info & Logout */}
-        <div className="p-4 border-t border-slate-800/80 flex items-center justify-between bg-slate-950/60">
+        <div className={`p-4 border-t ${theme.border} flex items-center justify-between bg-white/40`}>
           <div className="truncate pr-2">
-            <p className="text-xs font-bold text-slate-200 truncate">
+            <p className="text-xs font-bold truncate">
               {currentUser?.email || "User"}
             </p>
-            <p className="text-[10px] text-teal-400">Sanctuary Member</p>
+            <p className={`text-[10px] font-medium ${theme.textMuted}`}>Sanctuary Member</p>
           </div>
           <button
             onClick={handleLogout}
             title="Sign Out"
-            className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
           >
             <LogOut size={16} />
           </button>
         </div>
       </aside>
 
-      {/* Main Chat Interface */}
+      {/* Main Chat Area */}
       <main className="flex-1 flex flex-col relative z-10 min-w-0 h-full">
         {/* Header Bar */}
-        <header className="px-4 sm:px-6 py-3.5 bg-slate-900/70 backdrop-blur-xl border-b border-slate-800/80 flex items-center justify-between shrink-0">
+        <header className={`px-4 sm:px-6 py-3.5 ${theme.headerBg} backdrop-blur-xl border-b ${theme.border} flex items-center justify-between shrink-0 shadow-xs`}>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className="md:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+              className="md:hidden p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
             >
               <Menu size={18} />
             </button>
 
-            {/* Support Level Badge */}
+            {/* Active Support Level Badge with Immediate Interactive Controls */}
             <div className="flex items-center gap-2">
               <span
-                className={`px-3 py-1 rounded-full text-xs font-black tracking-wide flex items-center gap-1.5 shadow-sm border ${
-                  emotionLevel === 3
-                    ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
-                    : emotionLevel === 2
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                    : "bg-teal-500/20 text-teal-300 border-teal-500/40"
-                }`}
+                className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 border ${theme.badge} shadow-xs`}
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    emotionLevel === 3
-                      ? "bg-rose-500"
-                      : emotionLevel === 2
-                      ? "bg-amber-400"
-                      : "bg-teal-400"
+                    supportLevel === 3
+                      ? "bg-rose-600 animate-ping"
+                      : supportLevel === 2
+                      ? "bg-amber-500"
+                      : "bg-emerald-600"
                   }`}
                 />
-                Level {emotionLevel}:{" "}
-                {emotionLevel === 3
-                  ? "Urgent Safety"
-                  : emotionLevel === 2
-                  ? "Human Support Available"
-                  : "Calm Support"}
+                {theme.label}
               </span>
 
-              {emotionLevel === 3 && (
+              {supportLevel === 3 && (
                 <button
                   onClick={() => setShowEmergency(true)}
-                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black transition flex items-center gap-1"
+                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black transition flex items-center gap-1 shadow-sm"
                 >
                   <PhoneCall size={12} /> Call 14416
                 </button>
@@ -843,12 +923,11 @@ export const Chat = () => {
             </div>
           </div>
 
-          {/* Right Header Controls (Clock, Audio Readout, Camera) */}
-          <div className="flex items-center gap-3">
-            {/* Live Time Display */}
+          {/* Right Header Controls (Live Clock, TTS Audio, Camera) */}
+          <div className="flex items-center gap-2.5">
             {liveClock && (
-              <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-xl border border-slate-700/80">
-                <Clock size={13} className="text-teal-400" />
+              <div className={`hidden lg:flex items-center gap-1.5 text-xs ${theme.textSecondary} bg-white/70 px-3 py-1.5 rounded-xl border ${theme.border}`}>
+                <Clock size={13} />
                 <span>{liveClock}</span>
               </div>
             )}
@@ -865,18 +944,24 @@ export const Chat = () => {
               title={ttsEnabled ? "Read Aloud Enabled" : "Read Aloud Disabled"}
               className={`p-2 rounded-xl border transition cursor-pointer ${
                 ttsEnabled
-                  ? "bg-teal-500/20 text-teal-300 border-teal-500/40"
-                  : "bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white"
+                  ? theme.badge
+                  : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"
               }`}
             >
-              {isSpeaking ? <Volume2 size={16} className="animate-pulse text-teal-400" /> : ttsEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {isSpeaking ? (
+                <Volume2 size={16} className="animate-pulse text-emerald-600" />
+              ) : ttsEnabled ? (
+                <Volume2 size={16} />
+              ) : (
+                <VolumeX size={16} />
+              )}
             </button>
 
             {/* Camera Privacy Toggle */}
             <div className="relative flex items-center">
               {cameraActive ? (
                 <div className="flex items-center gap-2">
-                  <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-teal-400 shadow-md bg-black">
+                  <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-500 shadow-sm bg-black">
                     <video
                       ref={videoRef}
                       autoPlay
@@ -888,7 +973,7 @@ export const Chat = () => {
                   <button
                     onClick={stopCamera}
                     title="Turn Off Camera"
-                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-400 border border-slate-700 transition cursor-pointer"
+                    className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 transition cursor-pointer"
                   >
                     <VideoOff size={16} />
                   </button>
@@ -897,7 +982,7 @@ export const Chat = () => {
                 <button
                   onClick={() => setShowCameraNotice(true)}
                   title="Enable Facial Mirror (Optional & Local)"
-                  className="p-2 rounded-xl bg-slate-800/80 text-slate-400 hover:text-teal-300 border border-slate-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+                  className="p-2 rounded-xl bg-white text-slate-600 hover:text-emerald-700 border border-slate-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
                 >
                   <Video size={16} />
                   <span className="hidden sm:inline">Camera</span>
@@ -907,14 +992,14 @@ export const Chat = () => {
           </div>
         </header>
 
-        {/* Detected Expression Notification (Subtle Mirror Banner) */}
+        {/* Detected Expression Notification (Subtle Local Mirror Banner) */}
         {cameraActive && detectedExpression && (
-          <div className="px-6 py-1.5 bg-teal-500/10 border-b border-teal-500/20 text-teal-300 text-xs flex items-center justify-between">
+          <div className={`px-6 py-1.5 bg-white/80 border-b ${theme.border} ${theme.textSecondary} text-xs flex items-center justify-between`}>
             <span className="flex items-center gap-2">
               <span>🪞 Facial Mirror (Local only):</span>
               <strong className="capitalize">{detectedExpression}</strong>
             </span>
-            <span className="text-[10px] text-slate-400">Zero cloud upload</span>
+            <span className="text-[10px] opacity-70">Zero cloud upload</span>
           </div>
         )}
 
@@ -923,11 +1008,11 @@ export const Chat = () => {
           <div className="max-w-3xl mx-auto flex flex-col gap-4">
             {loadingMessages ? (
               <div className="space-y-4 py-8">
-                <div className="w-2/3 h-14 bg-slate-800/50 rounded-2xl animate-pulse" />
-                <div className="w-1/2 h-14 bg-slate-800/50 rounded-2xl ml-auto animate-pulse" />
+                <div className="w-2/3 h-14 bg-slate-200/50 rounded-2xl animate-pulse" />
+                <div className="w-1/2 h-14 bg-slate-200/50 rounded-2xl ml-auto animate-pulse" />
               </div>
             ) : messages.length === 0 ? (
-              <div className="text-center py-16 text-slate-500 text-sm">
+              <div className="text-center py-16 text-slate-400 text-sm">
                 Starting your calm space...
               </div>
             ) : (
@@ -937,10 +1022,10 @@ export const Chat = () => {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2 }}
-                  className={`max-w-[85%] sm:max-w-[78%] p-4 sm:p-5 rounded-3xl relative group shadow-lg leading-relaxed select-text ${
+                  className={`max-w-[85%] sm:max-w-[78%] p-4 sm:p-5 rounded-3xl relative group shadow-sm leading-relaxed select-text border ${
                     msg.sender === "user"
-                      ? "bg-gradient-to-tr from-teal-500 via-cyan-500 to-blue-600 text-slate-950 font-medium self-end rounded-br-sm border border-teal-400/30"
-                      : "bg-slate-900/90 text-slate-100 self-start rounded-bl-sm border border-slate-800 shadow-slate-950/50"
+                      ? `${theme.userBubble} self-end rounded-br-sm`
+                      : `${theme.aiBubble} self-start rounded-bl-sm`
                   }`}
                 >
                   {editingMsgId === msg.id ? (
@@ -949,19 +1034,19 @@ export const Chat = () => {
                         type="text"
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
-                        className="w-full bg-slate-950/80 text-white px-3 py-2 rounded-xl text-sm border border-slate-700 outline-none focus:border-teal-400"
+                        className="w-full bg-white text-slate-900 px-3 py-2 rounded-xl text-sm border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-500"
                         autoFocus
                       />
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => setEditingMsgId(null)}
-                          className="px-2.5 py-1 text-xs text-slate-400 hover:text-white"
+                          className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={() => handleEditMessage(msg.id)}
-                          className="px-3 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                          className="px-3 py-1 bg-slate-900 text-white rounded-lg text-xs font-bold flex items-center gap-1"
                         >
                           <Check size={13} /> Save
                         </button>
@@ -969,11 +1054,11 @@ export const Chat = () => {
                     </div>
                   ) : (
                     <div>
-                      <p className="text-[14px] sm:text-[15px] whitespace-pre-wrap break-words">
+                      <p className="text-[14px] sm:text-[15px] whitespace-pre-wrap break-words leading-relaxed">
                         {msg.text}
                       </p>
 
-                      <div className="flex items-center justify-between gap-3 mt-2 text-[10px] opacity-75">
+                      <div className="flex items-center justify-between gap-3 mt-2 text-[10px] opacity-70">
                         <span>{formatMessageTime(msg.timestamp)}</span>
                         {msg.edited && <span>(edited)</span>}
                         {msg.sender === "user" && (
@@ -982,7 +1067,7 @@ export const Chat = () => {
                               setEditingMsgId(msg.id);
                               setEditText(msg.text);
                             }}
-                            className="opacity-0 group-hover:opacity-100 transition p-1 hover:bg-slate-950/20 rounded"
+                            className="opacity-0 group-hover:opacity-100 transition p-1 hover:bg-black/10 rounded"
                             title="Edit message"
                           >
                             <Edit2 size={12} />
@@ -996,8 +1081,8 @@ export const Chat = () => {
             )}
 
             {isAiReplying && (
-              <div className="self-start p-4 rounded-3xl bg-slate-900/70 border border-slate-800 flex items-center gap-2 text-xs text-slate-400">
-                <Sparkles size={14} className="text-teal-400 animate-pulse" />
+              <div className={`self-start p-4 rounded-3xl ${theme.cardBg} border ${theme.border} flex items-center gap-2 text-xs ${theme.textSecondary}`}>
+                <Sparkles size={14} className="animate-pulse" />
                 <span>CalmChain is reflecting...</span>
               </div>
             )}
@@ -1006,25 +1091,53 @@ export const Chat = () => {
           </div>
         </div>
 
+        {/* Voice Input State Notification Banner */}
+        {voiceState !== "idle" && (
+          <div className="px-6 py-2 bg-white/95 border-t border-slate-200 text-xs flex items-center justify-between z-20 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+              <span className="font-bold">
+                {voiceState === "listening" && "Listening... speak now, will send automatically when you finish"}
+                {voiceState === "processing" && "Processing speech..."}
+                {voiceState === "sending" && "Submitting your message to chat..."}
+              </span>
+            </div>
+            <button
+              onClick={cancelVoiceInput}
+              className="text-slate-500 hover:text-rose-600 font-bold text-[11px] underline cursor-pointer"
+            >
+              Cancel Voice
+            </button>
+          </div>
+        )}
+
+        {voiceError && (
+          <div className="px-6 py-2 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs">
+            {voiceError}
+          </div>
+        )}
+
         {/* Input Composer */}
-        <footer className="p-3 sm:p-5 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800/80 shrink-0">
+        <footer className={`p-3 sm:p-5 ${theme.headerBg} backdrop-blur-xl border-t ${theme.border} shrink-0`}>
           <form
             onSubmit={handleSendMessage}
             className="max-w-3xl mx-auto relative flex items-center gap-2"
           >
-            {/* Voice Input Button */}
+            {/* Automatic Voice Input Button */}
             {sttSupported && (
               <button
                 type="button"
-                onClick={toggleListening}
-                title={isListening ? "Listening... click to stop" : "Voice Input (Speech-to-Text)"}
+                onClick={startVoiceInput}
+                title={
+                  voiceState === "listening"
+                    ? "Listening... Tap to finish or pause"
+                    : "Voice Input (Auto-sends upon finish)"
+                }
                 className={`p-3 rounded-2xl border transition cursor-pointer shrink-0 ${
-                  isListening
-                    ? "bg-rose-500 text-white border-rose-400 animate-pulse"
-                    : "bg-slate-800 text-slate-400 hover:text-teal-300 border-slate-700"
+                  voiceState === "listening" ? theme.micActive : theme.micButton
                 }`}
               >
-                {isListening ? <Mic size={20} /> : <Mic size={20} />}
+                <Mic size={20} />
               </button>
             )}
 
@@ -1034,29 +1147,29 @@ export const Chat = () => {
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder={
-                isListening
-                  ? "Listening to your voice..."
+                voiceState === "listening"
+                  ? "Listening to your voice (will auto-send when you finish)..."
                   : "Type what's on your mind or tap mic..."
               }
-              className="w-full bg-slate-950/70 border border-slate-800 text-slate-100 placeholder-slate-500 rounded-2xl px-5 py-3.5 text-sm sm:text-base outline-none focus:border-teal-400/80 focus:ring-2 focus:ring-teal-400/20 transition shadow-inner font-normal"
+              className={`w-full rounded-2xl px-5 py-3.5 text-sm sm:text-base outline-none border transition shadow-inner font-normal ${theme.input}`}
             />
 
-            {/* Send Button */}
+            {/* Manual Send Button */}
             <button
               type="submit"
               disabled={!newMessage.trim()}
-              className="p-3.5 bg-gradient-to-r from-teal-400 via-cyan-400 to-blue-500 disabled:opacity-40 text-slate-950 rounded-2xl transition shadow-lg shadow-teal-500/20 active:scale-95 cursor-pointer shrink-0"
+              className={`p-3.5 rounded-2xl disabled:opacity-30 transition shadow-md active:scale-95 cursor-pointer shrink-0 ${theme.sendButton}`}
               aria-label="Send message"
             >
               <Send size={18} />
             </button>
           </form>
 
-          <div className="max-w-3xl mx-auto mt-2 flex items-center justify-between text-[11px] text-slate-500 px-2">
-            <span>Confidential AI companion • Not a substitute for clinical care</span>
-            {emotionLevel === 2 && (
-              <span className="text-amber-400 font-semibold">
-                Peer Support Desk: Available Mon-Sat 9AM-8PM IST
+          <div className={`max-w-3xl mx-auto mt-2 flex items-center justify-between text-[11px] ${theme.textMuted} px-2`}>
+            <span>Confidential AI companion • Voice auto-sends when speech ends</span>
+            {supportLevel === 2 && (
+              <span className="font-semibold text-amber-800">
+                Peer Support Desk: Mon-Sat 9AM-8PM IST
               </span>
             )}
           </div>
@@ -1070,34 +1183,34 @@ export const Chat = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
             onClick={() => setShowCameraNotice(false)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl p-6 text-white text-center shadow-2xl relative"
+              className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 text-slate-800 text-center shadow-2xl relative"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-500/40 text-teal-400 flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4">
                 <Video size={24} />
               </div>
-              <h2 className="text-lg font-bold font-['Outfit'] mb-2">Optional Facial Expression Mirror</h2>
-              <p className="text-xs text-slate-300 leading-relaxed mb-6">
-                CalmChain uses your webcam solely for <strong>100% on-device emotion estimation</strong> via face-api.js.
-                No video or facial biometrics are ever recorded, stored, or sent to any server. You can turn it off anytime.
+              <h2 className="text-lg font-bold font-['Outfit'] mb-2">Optional Facial Mirror</h2>
+              <p className="text-xs text-slate-600 leading-relaxed mb-6">
+                CalmChain uses your camera solely for <strong>100% on-device emotion estimation</strong> via face-api.js.
+                Zero video or biometric data is recorded, stored, or uploaded. You can turn it off anytime.
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowCameraNotice(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-bold"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={startCamera}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-400 to-cyan-500 text-slate-950 text-xs font-black"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm"
                 >
                   Allow & Start Camera
                 </button>
@@ -1107,7 +1220,7 @@ export const Chat = () => {
         )}
       </AnimatePresence>
 
-      {/* Auxiliary Modals */}
+      {/* Modals */}
       <EmergencyModal isOpen={showEmergency} onClose={() => setShowEmergency(false)} />
       <BreathingExerciseModal isOpen={showBreathing} onClose={() => setShowBreathing(false)} />
       <MoodTrackerModal

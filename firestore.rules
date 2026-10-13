@@ -1,0 +1,141 @@
+// ============================================================
+// PROPOSED Firestore Security Rules for CalmChain (TranquilNet)
+// ============================================================
+//
+// STATUS: NOT DEPLOYED. Review and test in Firebase Console first.
+//
+// HOW TO REVIEW & TEST SAFELY (do NOT click "Publish" yet):
+//   1. Go to Firebase Console → Firestore Database → Rules tab.
+//   2. Click "Edit rules" and paste these rules.
+//   3. Use the built-in Rules Playground (the hammer icon) to test
+//      read/write operations before publishing.
+//   4. Test the scenarios listed at the bottom of this file.
+//   5. Only click "Publish" after all tests pass and your admin custom claim is set.
+//
+// DATA MODEL (verified from codebase audit):
+//   users/{userId}           → { email, role: "user", createdAt }
+//   admins/{userId}          → { email, role: "admin", createdAt }
+//   chats/{chatId}           → { userId, title, createdAt, updatedAt, messages: [] }
+//      messages[i]           → { id, text, sender, emotion, level, timestamp }
+//   moods/{moodId}           → { userId, moodValue, moodLabel, note, createdAt }
+//   supportRequests/{reqId}  → { userId, userEmail, preferredContact, contactDetail, note, status, requestedAt }
+//
+// ============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    // ----------------------------------------------------------
+    // users collection
+    // Regular users can read and update their own document only.
+    // Verified admins (with custom claim admin==true) can read all users.
+    // ----------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId);
+    }
+
+    // ----------------------------------------------------------
+    // admins collection
+    // Admins can read their own document or list admins if they have
+    // the admin custom claim. Direct client writes are BLOCKED —
+    // admin documents must only be modified via Firebase Console
+    // or the backend CLI tool (backend/scripts/setAdminClaim.js).
+    // ----------------------------------------------------------
+    match /admins/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;  // Console or Admin SDK only
+    }
+
+    // ----------------------------------------------------------
+    // chats collection
+    // Regular users can only read, create, update, or delete their
+    // own chat sessions.
+    // Verified admins (with custom claim admin==true) can read all chats.
+    // ----------------------------------------------------------
+    match /chats/{chatId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+
+      // Users can only create chats assigned to their own authenticated UID
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+      // Users can only edit/delete their own chats
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // ----------------------------------------------------------
+    // moods collection
+    // Private user reflections. Users can create and read their own entries.
+    // ----------------------------------------------------------
+    match /moods/{moodId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // ----------------------------------------------------------
+    // supportRequests collection
+    // Level 2 counselor requests.
+    // Users create their own requests; admins read and update status.
+    // ----------------------------------------------------------
+    match /supportRequests/{reqId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+  }
+}
+
+// ============================================================
+// RULES PLAYGROUND TESTS (Verify these in Firebase Console):
+//
+//  Test 1 — Regular User reads own chat:
+//    Operation: GET chats/chat_abc
+//    Auth UID: "user_123"
+//    Document data: { userId: "user_123" }
+//    Expected: ALLOW
+//
+//  Test 2 — Regular User attempts to read another user's chat:
+//    Operation: GET chats/chat_xyz
+//    Auth UID: "user_123"
+//    Document data: { userId: "user_456" }
+//    Expected: DENY
+//
+//  Test 3 — Admin reads chats (custom claim):
+//    Operation: GET chats/chat_xyz
+//    Auth UID: "admin_999"
+//    Custom Token Payload: { "admin": true }
+//    Expected: ALLOW
+//
+//  Test 4 — User creates own mood entry:
+//    Operation: CREATE moods/mood_1
+//    Auth UID: "user_123"
+//    Document data: { userId: "user_123" }
+//    Expected: ALLOW
+//
+//  Test 5 — User creates support request:
+//    Operation: CREATE supportRequests/req_1
+//    Auth UID: "user_123"
+//    Document data: { userId: "user_123" }
+//    Expected: ALLOW
+//
+//  Test 6 — Client attempts to write to admins collection:
+//    Operation: CREATE admins/user_123
+//    Auth UID: "user_123"
+//    Expected: DENY
+// ============================================================

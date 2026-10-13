@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node -e \"console.log('CalmChain Backend Ready')\""
+    "test": "node tests/classifier.test.js"
   },
   "keywords": [
     "mental-wellness",
