@@ -103,7 +103,7 @@ export const Signup = () => {
               CalmChain
             </span>
           </Link>
-          <h1 className="text-xl font-bold text-white">Create Sanctuary Account</h1>
+          <h1 className="text-xl font-bold text-white">Create Account</h1>
           <p className="text-xs text-slate-400 mt-1">Join your safe, confidential wellness space</p>
         </div>
 
