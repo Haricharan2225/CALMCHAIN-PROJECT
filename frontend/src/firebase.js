@@ -3,13 +3,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyC-ZjwZHBUSekpjqnKjGXVyB_JH9PreDGs",
+  authDomain: "calmchain-project.firebaseapp.com",
+  projectId: "calmchain-project",
+  storageBucket: "calmchain-project.firebasestorage.app",
+  messagingSenderId: "270254382941",
+  appId: "1:270254382941:web:a18c7740516237f543d2b4",
+  measurementId: "G-H5DYDM7KR4"
 };
 
 const app = initializeApp(firebaseConfig);
