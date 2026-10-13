@@ -74,7 +74,6 @@ export const Chat = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Voice Input (Auto-Send on final transcript)
-  // States: 'idle' | 'listening' | 'processing' | 'sending' | 'error'
   const [voiceState, setVoiceState] = useState("idle");
   const [sttSupported, setSttSupported] = useState(true);
   const [voiceError, setVoiceError] = useState("");
@@ -100,6 +99,16 @@ export const Chat = () => {
   // Refs
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
+
+  // Prompt camera consent immediately upon entering chat if not already handled in this session
+  useEffect(() => {
+    if (currentUser) {
+      const cameraHandled = sessionStorage.getItem("calmchain_camera_prompted");
+      if (!cameraHandled) {
+        setShowCameraNotice(true);
+      }
+    }
+  }, [currentUser]);
 
   // 1. Live Date & Time timer
   useEffect(() => {
@@ -263,7 +272,7 @@ export const Chat = () => {
         if (textToSend && !hasSubmittedVoiceRef.current) {
           hasSubmittedVoiceRef.current = true;
           setVoiceState("sending");
-          // Automatically send the message without requiring Send click!
+          // Automatically send the message without requiring Send click
           handleSendVoiceMessage(textToSend);
         } else {
           setVoiceState("idle");
@@ -414,8 +423,8 @@ export const Chat = () => {
       setShowCameraNotice(false);
     } catch (err) {
       console.warn("Camera access denied or unavailable:", err);
-      alert("Camera permission was denied. You can continue typing or using voice input normally.");
       setCameraActive(false);
+      setShowCameraNotice(false);
     }
   };
 
@@ -429,6 +438,17 @@ export const Chat = () => {
     }
     setCameraActive(false);
     setDetectedExpression(null);
+  };
+
+  const handleAllowCamera = () => {
+    sessionStorage.setItem("calmchain_camera_prompted", "true");
+    setShowCameraNotice(false);
+    startCamera();
+  };
+
+  const handleDismissCamera = () => {
+    sessionStorage.setItem("calmchain_camera_prompted", "true");
+    setShowCameraNotice(false);
   };
 
   useEffect(() => {
@@ -447,7 +467,7 @@ export const Chat = () => {
               setDetectedExpression(dominant);
             }
           } catch (e) {
-            // Silently ignore drop
+            // Silently ignore frame drop
           }
         }
       }, 3500);
@@ -760,29 +780,29 @@ export const Chat = () => {
       {/* Mobile Sidebar Overlay */}
       {mobileSidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm md:hidden"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-72 ${theme.sidebarBg} backdrop-blur-2xl border-r ${theme.border} flex flex-col shadow-xl transition-all duration-300 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-72 ${theme.sidebarBg} backdrop-blur-2xl border-r ${theme.border} flex flex-col shadow-2xl transition-all duration-300 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
         {/* Brand Header */}
         <div className={`p-5 border-b ${theme.border} flex items-center justify-between`}>
           <div className="flex items-center gap-3">
-            <img src="/calmchain-logo.svg" alt="CalmChain Logo" className="w-9 h-9 drop-shadow-sm" />
+            <img src="/calmchain-logo.svg" alt="CalmChain Logo" className="w-9 h-9 drop-shadow-md" />
             <div>
-              <h1 className="text-xl font-black font-['Outfit'] tracking-tight">CalmChain</h1>
+              <h1 className="text-xl font-black font-['Outfit'] tracking-tight text-white">CalmChain</h1>
               <p className={`text-[11px] font-bold ${theme.textSecondary}`}>{theme.name}</p>
             </div>
           </div>
           <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="md:hidden p-1 text-slate-500 hover:text-slate-900"
+            className="md:hidden p-1 text-slate-400 hover:text-white"
           >
             <X size={20} />
           </button>
@@ -802,12 +822,12 @@ export const Chat = () => {
         <div className="flex-1 overflow-y-auto px-3 space-y-4 text-xs">
           {loadingChats ? (
             <div className="space-y-2 p-2">
-              <div className="h-10 bg-slate-200/50 rounded-xl animate-pulse" />
-              <div className="h-10 bg-slate-200/50 rounded-xl animate-pulse" />
-              <div className="h-10 bg-slate-200/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
             </div>
           ) : chats.length === 0 ? (
-            <div className="text-center py-10 text-slate-500 text-xs">
+            <div className="text-center py-10 text-slate-400 text-xs">
               No conversations yet. Tap "New Conversation" to start.
             </div>
           ) : (
@@ -859,16 +879,16 @@ export const Chat = () => {
           </button>
           <button
             onClick={() => setShowEmergency(true)}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer text-rose-700 hover:bg-rose-50`}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer text-rose-400 hover:bg-rose-950/40 hover:text-rose-300"
           >
             <PhoneCall size={16} /> Emergency Helplines
           </button>
         </div>
 
         {/* User Info & Logout */}
-        <div className={`p-4 border-t ${theme.border} flex items-center justify-between bg-white/40`}>
+        <div className={`p-4 border-t ${theme.border} flex items-center justify-between bg-[#0B1120]/60`}>
           <div className="truncate pr-2">
-            <p className="text-xs font-bold truncate">
+            <p className="text-xs font-bold text-slate-200 truncate">
               {currentUser?.email || "User"}
             </p>
             <p className={`text-[10px] font-medium ${theme.textMuted}`}>Sanctuary Member</p>
@@ -876,7 +896,7 @@ export const Chat = () => {
           <button
             onClick={handleLogout}
             title="Sign Out"
-            className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+            className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition cursor-pointer"
           >
             <LogOut size={16} />
           </button>
@@ -890,7 +910,7 @@ export const Chat = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className="md:hidden p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="md:hidden p-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700"
             >
               <Menu size={18} />
             </button>
@@ -903,10 +923,10 @@ export const Chat = () => {
                 <span
                   className={`w-2 h-2 rounded-full ${
                     supportLevel === 3
-                      ? "bg-rose-600 animate-ping"
+                      ? "bg-rose-500 animate-ping"
                       : supportLevel === 2
-                      ? "bg-amber-500"
-                      : "bg-emerald-600"
+                      ? "bg-amber-400"
+                      : "bg-emerald-400"
                   }`}
                 />
                 {theme.label}
@@ -915,7 +935,7 @@ export const Chat = () => {
               {supportLevel === 3 && (
                 <button
                   onClick={() => setShowEmergency(true)}
-                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black transition flex items-center gap-1 shadow-sm"
+                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black transition flex items-center gap-1 shadow-sm"
                 >
                   <PhoneCall size={12} /> Call 14416
                 </button>
@@ -926,8 +946,8 @@ export const Chat = () => {
           {/* Right Header Controls (Live Clock, TTS Audio, Camera) */}
           <div className="flex items-center gap-2.5">
             {liveClock && (
-              <div className={`hidden lg:flex items-center gap-1.5 text-xs ${theme.textSecondary} bg-white/70 px-3 py-1.5 rounded-xl border ${theme.border}`}>
-                <Clock size={13} />
+              <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
+                <Clock size={13} className="text-teal-400" />
                 <span>{liveClock}</span>
               </div>
             )}
@@ -945,11 +965,11 @@ export const Chat = () => {
               className={`p-2 rounded-xl border transition cursor-pointer ${
                 ttsEnabled
                   ? theme.badge
-                  : "bg-white text-slate-500 border-slate-200 hover:text-slate-900"
+                  : "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200"
               }`}
             >
               {isSpeaking ? (
-                <Volume2 size={16} className="animate-pulse text-emerald-600" />
+                <Volume2 size={16} className="animate-pulse text-emerald-400" />
               ) : ttsEnabled ? (
                 <Volume2 size={16} />
               ) : (
@@ -973,16 +993,20 @@ export const Chat = () => {
                   <button
                     onClick={stopCamera}
                     title="Turn Off Camera"
-                    className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 transition cursor-pointer"
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-400 border border-slate-700 transition cursor-pointer"
                   >
                     <VideoOff size={16} />
                   </button>
                 </div>
               ) : (
                 <button
-                  onClick={() => setShowCameraNotice(true)}
+                  onClick={() => {
+                    if (!cameraActive) {
+                      startCamera();
+                    }
+                  }}
                   title="Enable Facial Mirror (Optional & Local)"
-                  className="p-2 rounded-xl bg-white text-slate-600 hover:text-emerald-700 border border-slate-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
                 >
                   <Video size={16} />
                   <span className="hidden sm:inline">Camera</span>
@@ -994,12 +1018,12 @@ export const Chat = () => {
 
         {/* Detected Expression Notification (Subtle Local Mirror Banner) */}
         {cameraActive && detectedExpression && (
-          <div className={`px-6 py-1.5 bg-white/80 border-b ${theme.border} ${theme.textSecondary} text-xs flex items-center justify-between`}>
+          <div className={`px-6 py-1.5 bg-[#0F172A]/90 border-b ${theme.border} text-slate-300 text-xs flex items-center justify-between`}>
             <span className="flex items-center gap-2">
               <span>🪞 Facial Mirror (Local only):</span>
-              <strong className="capitalize">{detectedExpression}</strong>
+              <strong className="capitalize text-emerald-400">{detectedExpression}</strong>
             </span>
-            <span className="text-[10px] opacity-70">Zero cloud upload</span>
+            <span className="text-[10px] text-slate-500">Zero cloud upload</span>
           </div>
         )}
 
@@ -1008,8 +1032,8 @@ export const Chat = () => {
           <div className="max-w-3xl mx-auto flex flex-col gap-4">
             {loadingMessages ? (
               <div className="space-y-4 py-8">
-                <div className="w-2/3 h-14 bg-slate-200/50 rounded-2xl animate-pulse" />
-                <div className="w-1/2 h-14 bg-slate-200/50 rounded-2xl ml-auto animate-pulse" />
+                <div className="w-2/3 h-14 bg-slate-800/60 rounded-2xl animate-pulse" />
+                <div className="w-1/2 h-14 bg-slate-800/60 rounded-2xl ml-auto animate-pulse" />
               </div>
             ) : messages.length === 0 ? (
               <div className="text-center py-16 text-slate-400 text-sm">
@@ -1034,19 +1058,19 @@ export const Chat = () => {
                         type="text"
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
-                        className="w-full bg-white text-slate-900 px-3 py-2 rounded-xl text-sm border border-slate-300 outline-none focus:ring-2 focus:ring-emerald-500"
+                        className="w-full bg-slate-900 text-slate-100 px-3 py-2 rounded-xl text-sm border border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
                         autoFocus
                       />
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => setEditingMsgId(null)}
-                          className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800"
+                          className="px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={() => handleEditMessage(msg.id)}
-                          className="px-3 py-1 bg-slate-900 text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"
                         >
                           <Check size={13} /> Save
                         </button>
@@ -1067,7 +1091,7 @@ export const Chat = () => {
                               setEditingMsgId(msg.id);
                               setEditText(msg.text);
                             }}
-                            className="opacity-0 group-hover:opacity-100 transition p-1 hover:bg-black/10 rounded"
+                            className="opacity-0 group-hover:opacity-100 transition p-1 hover:bg-black/20 rounded"
                             title="Edit message"
                           >
                             <Edit2 size={12} />
@@ -1082,7 +1106,7 @@ export const Chat = () => {
 
             {isAiReplying && (
               <div className={`self-start p-4 rounded-3xl ${theme.cardBg} border ${theme.border} flex items-center gap-2 text-xs ${theme.textSecondary}`}>
-                <Sparkles size={14} className="animate-pulse" />
+                <Sparkles size={14} className="animate-pulse text-emerald-400" />
                 <span>CalmChain is reflecting...</span>
               </div>
             )}
@@ -1093,7 +1117,7 @@ export const Chat = () => {
 
         {/* Voice Input State Notification Banner */}
         {voiceState !== "idle" && (
-          <div className="px-6 py-2 bg-white/95 border-t border-slate-200 text-xs flex items-center justify-between z-20 shadow-sm">
+          <div className="px-6 py-2 bg-[#0F172A] border-t border-slate-800 text-xs flex items-center justify-between z-20 shadow-sm text-slate-200">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
               <span className="font-bold">
@@ -1104,7 +1128,7 @@ export const Chat = () => {
             </div>
             <button
               onClick={cancelVoiceInput}
-              className="text-slate-500 hover:text-rose-600 font-bold text-[11px] underline cursor-pointer"
+              className="text-slate-400 hover:text-rose-400 font-bold text-[11px] underline cursor-pointer"
             >
               Cancel Voice
             </button>
@@ -1112,7 +1136,7 @@ export const Chat = () => {
         )}
 
         {voiceError && (
-          <div className="px-6 py-2 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs">
+          <div className="px-6 py-2 bg-rose-950/80 border-t border-rose-900 text-rose-300 text-xs">
             {voiceError}
           </div>
         )}
@@ -1168,7 +1192,7 @@ export const Chat = () => {
           <div className={`max-w-3xl mx-auto mt-2 flex items-center justify-between text-[11px] ${theme.textMuted} px-2`}>
             <span>Confidential AI companion • Voice auto-sends when speech ends</span>
             {supportLevel === 2 && (
-              <span className="font-semibold text-amber-800">
+              <span className="font-semibold text-amber-300">
                 Peer Support Desk: Mon-Sat 9AM-8PM IST
               </span>
             )}
@@ -1176,43 +1200,52 @@ export const Chat = () => {
         </footer>
       </main>
 
-      {/* Camera Privacy Permission Modal */}
+      {/* Camera Permission & Emotion Consent Modal (Immediate on sign-in & on demand) */}
       <AnimatePresence>
         {showCameraNotice && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
-            onClick={() => setShowCameraNotice(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+            onClick={handleDismissCamera}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 text-slate-800 text-center shadow-2xl relative"
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="w-full max-w-md bg-[#0F172A] border border-slate-800 rounded-3xl p-6 sm:p-8 text-slate-100 text-center shadow-2xl relative"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4">
-                <Video size={24} />
+              <div className="w-14 h-14 rounded-2xl bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto mb-4">
+                <Video size={28} />
               </div>
-              <h2 className="text-lg font-bold font-['Outfit'] mb-2">Optional Facial Mirror</h2>
-              <p className="text-xs text-slate-600 leading-relaxed mb-6">
-                CalmChain uses your camera solely for <strong>100% on-device emotion estimation</strong> via face-api.js.
-                Zero video or biometric data is recorded, stored, or uploaded. You can turn it off anytime.
+              <h2 className="text-xl font-bold font-['Outfit'] mb-2 text-white">
+                Enable Emotion Detection?
+              </h2>
+              <p className="text-xs text-slate-300 leading-relaxed mb-4">
+                CalmChain can estimate your facial sentiment in real time to adapt wellness support and comfort levels.
               </p>
+              <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-left mb-6 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                  <Sparkles size={14} /> 100% On-Device Processing
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  All face emotion detection runs locally in your browser via Face-API. Zero video feeds or biometric data are recorded, stored, or sent to any server.
+                </p>
+              </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowCameraNotice(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold"
+                  onClick={handleDismissCamera}
+                  className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
                 >
-                  Cancel
+                  Not Now
                 </button>
                 <button
-                  onClick={startCamera}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm"
+                  onClick={handleAllowCamera}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-lg shadow-emerald-950/40 transition cursor-pointer"
                 >
-                  Allow & Start Camera
+                  Allow Camera
                 </button>
               </div>
             </motion.div>
