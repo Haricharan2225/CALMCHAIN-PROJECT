@@ -1,13 +1,20 @@
 {
-  "name": "backend",
+  "name": "calmchain-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "CalmChain (TranquilNet) AI Mental Wellness Server",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node -e \"console.log('CalmChain Backend Ready')\""
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "mental-wellness",
+    "calmchain",
+    "ai-support",
+    "socketio"
+  ],
+  "author": "CalmChain Team",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.13.6",

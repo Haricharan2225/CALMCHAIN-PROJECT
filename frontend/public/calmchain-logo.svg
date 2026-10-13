@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="cc-grad-teal" x1="10%" y1="10%" x2="90%" y2="90%">
+      <stop offset="0%" stop-color="#2DD4BF" />
+      <stop offset="50%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+    <linearGradient id="cc-grad-mint" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+    <linearGradient id="cc-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2DD4BF" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0.05" />
+    </linearGradient>
+    <filter id="cc-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F766E" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background Sanctuary Aura -->
+  <rect width="120" height="120" rx="32" fill="url(#cc-glow)" />
+
+  <!-- Outer Interlocking Harmony Ring (Chain / Protection Motif) -->
+  <g filter="url(#cc-shadow)">
+    <!-- First Interlocking Node (Calm Arc) -->
+    <path
+      d="M42 32 C54 20, 74 20, 86 32 C96 42, 96 58, 86 68 L76 78 C68 86, 54 86, 46 78 C42 74, 40 68, 40 62"
+      stroke="url(#cc-grad-teal)"
+      stroke-width="9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Second Interlocking Node (Supportive Leaf / Heart Anchor) -->
+    <path
+      d="M78 88 C66 100, 46 100, 34 88 C24 78, 24 62, 34 52 L44 42 C52 34, 66 34, 74 42 C78 46, 80 52, 80 58"
+      stroke="url(#cc-grad-mint)"
+      stroke-width="9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Central Organic Leaf / Flame of Peace Core -->
+    <path
+      d="M60 44 C66 52, 68 58, 68 64 C68 70, 64 74, 60 74 C56 74, 52 70, 52 64 C52 58, 54 52, 60 44 Z"
+      fill="url(#cc-grad-teal)"
+    />
+
+    <!-- Subtle Calming Heart Pulse Accent -->
+    <circle cx="60" cy="59" r="2.5" fill="#FFFFFF" />
+  </g>
+</svg>
