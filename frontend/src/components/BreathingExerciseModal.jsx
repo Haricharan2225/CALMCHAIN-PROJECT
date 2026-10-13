@@ -118,7 +118,7 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.92, opacity: 0, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="w-full max-w-md bg-[#0B132B]/95 border border-teal-500/30 rounded-3xl p-7 sm:p-8 shadow-2xl relative text-center text-white overflow-hidden backdrop-blur-2xl"
+            className="w-full max-w-md bg-[#0B132B]/95 border border-teal-500/30 rounded-3xl p-5 sm:p-8 shadow-2xl relative text-center text-white overflow-y-auto max-h-[92vh] backdrop-blur-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Cyan Accent Beam */}
@@ -127,25 +127,25 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="absolute top-5 right-5 p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer border border-slate-700 shadow-xs"
+              className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer border border-slate-700 shadow-xs"
               aria-label="Close breathing exercise"
             >
               <X size={18} />
             </button>
 
             {/* Header */}
-            <div className="flex items-center justify-center gap-2 mb-1.5 text-teal-300">
-              <Wind size={22} className="animate-pulse text-teal-400" />
-              <h2 className="text-xl font-bold font-['Outfit'] tracking-tight text-white">
+            <div className="flex items-center justify-center gap-2 mb-1 text-teal-300 mt-2 sm:mt-0">
+              <Wind size={20} className="animate-pulse text-teal-400" />
+              <h2 className="text-lg sm:text-xl font-bold font-['Outfit'] tracking-tight text-white">
                 Box Breathing Grounding
               </h2>
             </div>
-            <p className="text-xs text-slate-300 mb-7">
+            <p className="text-[11px] sm:text-xs text-slate-300 mb-5 sm:mb-7">
               4-4-4-4 autonomic rhythm to restore nervous system calm
             </p>
 
             {/* Animated Vibrant Breathing Circle Arena */}
-            <div className="relative w-64 h-64 mx-auto mb-7 flex items-center justify-center">
+            <div className="relative w-52 h-52 sm:w-64 sm:h-64 mx-auto mb-5 sm:mb-7 flex items-center justify-center">
               {/* Outer Radiant Glow Orb */}
               <motion.div
                 animate={{
@@ -163,7 +163,7 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
                   opacity: isActive ? [0.4, 0.8, 0.4] : 0.3
                 }}
                 transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
-                className={`absolute inset-8 rounded-full border-2 transition-all duration-700 ${currentConfig.borderClass}`}
+                className={`absolute inset-6 sm:inset-8 rounded-full border-2 transition-all duration-700 ${currentConfig.borderClass}`}
               />
 
               {/* Main Breathing Core Orb */}
@@ -172,20 +172,20 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
                   scale: isActive ? currentConfig.scaleTarget : 1
                 }}
                 transition={{ duration: 3.8, ease: "easeInOut" }}
-                className={`w-40 h-40 rounded-full bg-gradient-to-br ${currentConfig.gradientClass} border-2 ${currentConfig.borderClass} flex flex-col items-center justify-center relative z-10 transition-all duration-700`}
+                className={`w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br ${currentConfig.gradientClass} border-2 ${currentConfig.borderClass} flex flex-col items-center justify-center relative z-10 transition-all duration-700`}
               >
                 {/* Phase Tag */}
-                <span className={`text-xs font-black tracking-widest uppercase transition-all duration-500 ${currentConfig.labelClass}`}>
+                <span className={`text-[10px] sm:text-xs font-black tracking-widest uppercase transition-all duration-500 ${currentConfig.labelClass}`}>
                   {currentConfig.label}
                 </span>
 
                 {/* Big Vibrant Countdown */}
-                <span className="text-5xl font-black font-['Outfit'] my-1 text-white tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
+                <span className="text-4xl sm:text-5xl font-black font-['Outfit'] my-0.5 sm:my-1 text-white tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
                   {countdown}
                 </span>
 
                 {/* Subtitle */}
-                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                <span className="text-[9px] sm:text-[10px] font-bold text-slate-300 uppercase tracking-wider">
                   seconds
                 </span>
               </motion.div>

@@ -118,14 +118,14 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className={`w-full max-w-2xl ${theme.cardBg} border ${theme.border} rounded-3xl p-6 sm:p-8 shadow-2xl relative ${theme.textPrimary} max-h-[90vh] flex flex-col overflow-hidden`}
+            className={`w-full max-w-2xl ${theme.cardBg} border ${theme.border} rounded-3xl p-4 sm:p-8 shadow-2xl relative ${theme.textPrimary} max-h-[92vh] flex flex-col overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className={`flex items-center justify-between pb-4 border-b ${theme.border}`}>
+            <div className={`flex items-center justify-between pb-3 sm:pb-4 border-b ${theme.border}`}>
               <div className={`flex items-center gap-2 ${theme.textSecondary}`}>
-                <Sparkles size={20} />
-                <h2 className="text-xl font-bold font-['Outfit']">Daily Mood & Wellness Tracker</h2>
+                <Sparkles size={18} />
+                <h2 className="text-lg sm:text-xl font-bold font-['Outfit']">Daily Mood & Wellness Tracker</h2>
               </div>
               <button
                 onClick={onClose}
@@ -135,7 +135,7 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-4 space-y-6 pr-1">
+            <div className="flex-1 overflow-y-auto py-3 sm:py-4 space-y-5 sm:space-y-6 pr-1">
               {/* Record Mood Form */}
               <form onSubmit={handleSaveMood} className="space-y-4">
                 <div>
@@ -148,14 +148,14 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
                         key={m.id}
                         type="button"
                         onClick={() => setSelectedMood(m)}
-                        className={`p-3 rounded-2xl border text-center transition flex flex-col items-center gap-1.5 cursor-pointer ${
+                        className={`p-2 sm:p-3 rounded-2xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
                           selectedMood.id === m.id
                             ? `${m.color} ring-2 ring-emerald-400 shadow-md scale-[1.02] font-bold`
                             : "border-white/10 bg-black/25 text-slate-300 hover:bg-black/40"
                         }`}
                       >
-                        <span className="text-2xl">{m.emoji}</span>
-                        <span className="text-[11px] leading-tight">{m.label}</span>
+                        <span className="text-xl sm:text-2xl">{m.emoji}</span>
+                        <span className="text-[10px] sm:text-[11px] leading-tight">{m.label}</span>
                       </button>
                     ))}
                   </div>
@@ -170,7 +170,7 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="e.g. Took a walk, felt lighter after writing..."
-                    className={`w-full px-4 py-3 rounded-xl ${theme.input} text-sm outline-none transition`}
+                    className={`w-full px-4 py-3 rounded-xl ${theme.input} text-base sm:text-sm outline-none transition`}
                   />
                 </div>
 

@@ -103,36 +103,36 @@ export const Login = () => {
         initial={{ scale: 0.96, opacity: 0, y: 15 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md p-8 sm:p-10 bg-[#0F172A]/90 backdrop-blur-2xl rounded-3xl border border-slate-800 shadow-2xl relative z-10"
+        className="w-full max-w-md p-6 sm:p-10 bg-[#0F172A]/90 backdrop-blur-2xl rounded-3xl border border-slate-800 shadow-2xl relative z-10"
       >
         {/* Brand Header */}
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex flex-col items-center gap-2 group mb-3">
+        <div className="text-center mb-6 sm:mb-8">
+          <Link to="/" className="inline-flex flex-col items-center gap-2 group mb-2.5">
             <img
               src="/calmchain-logo.svg"
               alt="CalmChain"
-              className="w-14 h-14 drop-shadow-md group-hover:scale-105 transition-transform"
+              className="w-12 h-12 sm:w-14 sm:h-14 drop-shadow-md group-hover:scale-105 transition-transform"
             />
-            <span className="text-2xl font-black font-['Outfit'] tracking-tight text-white">
+            <span className="text-xl sm:text-2xl font-black font-['Outfit'] tracking-tight text-white">
               CalmChain
             </span>
           </Link>
-          <h1 className="text-xl font-bold text-white">Welcome Back</h1>
-          <p className="text-xs text-slate-400 mt-1">Re-enter your peaceful sanctuary</p>
+          <h1 className="text-lg sm:text-xl font-bold text-white">Welcome Back</h1>
+          <p className="text-xs text-slate-400 mt-0.5">Re-enter your peaceful sanctuary</p>
         </div>
 
         {error && (
           <motion.div
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-rose-950/60 text-rose-300 text-xs font-semibold py-3 px-4 rounded-xl mb-6 border border-rose-800 flex items-start gap-2"
+            className="bg-rose-950/60 text-rose-300 text-xs font-semibold py-2.5 px-3.5 sm:py-3 sm:px-4 rounded-xl mb-5 sm:mb-6 border border-rose-800 flex items-start gap-2"
           >
             <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-400" />
             <span>{error}</span>
           </motion.div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
           <div className="space-y-1.5">
             <label className="text-xs font-bold uppercase tracking-wider block text-slate-300">
               Email Address
@@ -142,7 +142,7 @@ export const Login = () => {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-100 placeholder-slate-500 text-sm focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 outline-none transition"
+              className="w-full px-4 py-3 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-100 placeholder-slate-500 text-base sm:text-sm focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 outline-none transition"
               placeholder="name@example.com"
             />
           </div>
@@ -157,7 +157,7 @@ export const Login = () => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 pr-11 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-100 placeholder-slate-500 text-sm focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 outline-none transition"
+                className="w-full px-4 py-3 pr-11 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-100 placeholder-slate-500 text-base sm:text-sm focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 outline-none transition"
                 placeholder="••••••••"
               />
               <button

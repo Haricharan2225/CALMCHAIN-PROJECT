@@ -324,31 +324,31 @@ export const AdminDashboard = () => {
   };
 
   return (
-    <div className={`min-h-screen ${theme.pageBg} text-slate-900 p-6 md:p-10 font-['Inter'] relative overflow-x-hidden transition-colors duration-500`}>
-      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
+    <div className={`min-h-screen ${theme.pageBg} text-slate-900 p-4 sm:p-6 md:p-10 font-['Inter'] relative overflow-x-hidden transition-colors duration-500`}>
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8 relative z-10">
         {/* Header Bar */}
-        <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 border-b ${theme.border} gap-4`}>
+        <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center pb-5 sm:pb-6 border-b ${theme.border} gap-4`}>
           <div className="flex items-center gap-3">
-            <img src="/calmchain-logo.svg" alt="CalmChain" className="w-10 h-10 drop-shadow-md" />
+            <img src="/calmchain-logo.svg" alt="CalmChain" className="w-9 h-9 sm:w-10 sm:h-10 drop-shadow-md shrink-0" />
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black font-['Outfit'] text-slate-900">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <h1 className="text-xl sm:text-2xl font-black font-['Outfit'] text-slate-900">
                   CalmChain Admin Center
                 </h1>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badge}`}>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${theme.badge}`}>
                   Live Firestore
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                   <ShieldCheck size={11} /> Verified Admin
                 </span>
               </div>
-              <p className={`text-xs ${theme.textSecondary} mt-0.5 font-medium`}>
+              <p className={`text-[11px] sm:text-xs ${theme.textSecondary} mt-0.5 font-medium break-all sm:break-normal`}>
                 Mental Wellness Telemetry & Risk Supervision • {currentUser?.email}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto justify-start sm:justify-end">
             {liveClock && (
               <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-700 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs font-medium">
                 <Clock size={14} className="text-teal-600" />
@@ -357,13 +357,13 @@ export const AdminDashboard = () => {
             )}
             <Link
               to="/chat"
-              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold border border-slate-200 transition flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold border border-slate-200 transition flex items-center gap-1.5 shadow-xs"
             >
               <ArrowLeft size={14} /> User Chat
             </Link>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 transition cursor-pointer"
             >
               <LogOut size={14} /> Logout
             </button>
@@ -478,7 +478,7 @@ export const AdminDashboard = () => {
             </div>
 
             {loading ? (
-              <div className="w-56 h-56 mx-auto rounded-full bg-slate-100 animate-pulse my-auto" />
+              <div className="w-48 sm:w-56 h-48 sm:h-56 mx-auto rounded-full bg-slate-100 animate-pulse my-auto" />
             ) : stats.emotions.calm === 0 &&
               stats.emotions.warning === 0 &&
               stats.emotions.danger === 0 ? (
@@ -486,18 +486,19 @@ export const AdminDashboard = () => {
                 <span>No conversation messages recorded yet.</span>
               </div>
             ) : (
-              <div className="w-[280px] sm:w-[320px] h-[280px] sm:h-[320px] mx-auto my-auto flex items-center justify-center">
+              <div className="w-[230px] sm:w-[300px] h-[230px] sm:h-[300px] max-w-full mx-auto my-auto flex items-center justify-center">
                 <Pie
                   data={pieData}
                   options={{
                     maintainAspectRatio: false,
+                    responsive: true,
                     plugins: {
                       legend: {
                         position: "bottom",
                         labels: {
                           color: "#334155",
-                          font: { family: "Inter", size: 11, weight: "bold" },
-                          padding: 16
+                          font: { family: "Inter", size: 10, weight: "bold" },
+                          padding: 12
                         }
                       }
                     }
@@ -570,15 +571,15 @@ export const AdminDashboard = () => {
 const StatCard = ({ icon, title, value, subtitle, badge, badgeColor, loading }) => (
   <motion.div
     whileHover={{ y: -3 }}
-    className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm relative overflow-hidden"
+    className="p-4 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm relative overflow-hidden"
   >
-    <div className="flex items-center justify-between mb-4">
-      <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+    <div className="flex items-center justify-between mb-3 sm:mb-4">
+      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
         {icon}
       </div>
       {badge && (
         <span
-          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+          className={`text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-0.5 rounded-full border ${
             badgeColor || "text-emerald-800 bg-emerald-50 border-emerald-200"
           }`}
         >
@@ -588,10 +589,10 @@ const StatCard = ({ icon, title, value, subtitle, badge, badgeColor, loading }) 
     </div>
     <p className="text-xs font-semibold text-slate-500">{title}</p>
     {loading ? (
-      <div className="h-9 w-20 bg-slate-100 rounded-lg animate-pulse mt-2" />
+      <div className="h-8 sm:h-9 w-20 bg-slate-100 rounded-lg animate-pulse mt-1.5 sm:mt-2" />
     ) : (
-      <h4 className="text-3xl font-black font-['Outfit'] text-slate-900 mt-1">{value}</h4>
+      <h4 className="text-2xl sm:text-3xl font-black font-['Outfit'] text-slate-900 mt-1">{value}</h4>
     )}
-    <p className="text-[11px] text-slate-400 mt-1">{subtitle}</p>
+    <p className="text-[10px] sm:text-[11px] text-slate-400 mt-1">{subtitle}</p>
   </motion.div>
 );

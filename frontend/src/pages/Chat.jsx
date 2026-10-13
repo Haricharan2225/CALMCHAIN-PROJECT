@@ -1069,7 +1069,7 @@ export const Chat = () => {
   };
 
   return (
-    <div className={`flex h-screen w-full ${theme.pageBg} ${theme.textPrimary} font-['Inter'] relative overflow-hidden select-none transition-colors duration-500`}>
+    <div className={`flex h-screen h-[100dvh] w-full ${theme.pageBg} ${theme.textPrimary} font-['Inter'] relative overflow-hidden select-none transition-colors duration-500`}>
       {/* Dynamic Ambient Theme Mesh Orbs */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
         <div
@@ -1090,7 +1090,7 @@ export const Chat = () => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-72 ${theme.sidebarBg} backdrop-blur-2xl border-r ${theme.border} flex flex-col shadow-lg transition-all duration-300 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-[82vw] sm:w-72 max-w-xs ${theme.sidebarBg} backdrop-blur-2xl border-r ${theme.border} flex flex-col shadow-lg transition-all duration-300 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
@@ -1170,7 +1170,7 @@ export const Chat = () => {
                           setChatToDelete(chat);
                         }}
                         title="Delete conversation"
-                        className="p-1.5 mr-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                        className="p-1.5 mr-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition cursor-pointer"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1225,22 +1225,23 @@ export const Chat = () => {
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col relative z-10 min-w-0 h-full">
         {/* Header Bar */}
-        <header className={`px-4 sm:px-6 py-3.5 ${theme.headerBg} backdrop-blur-xl border-b ${theme.border} flex items-center justify-between shrink-0 shadow-xs`}>
-          <div className="flex items-center gap-3">
+        <header className={`px-2.5 sm:px-6 py-2.5 sm:py-3.5 ${theme.headerBg} backdrop-blur-xl border-b ${theme.border} flex items-center justify-between shrink-0 shadow-xs gap-2`}>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className={`md:hidden p-2 rounded-xl bg-white border ${theme.border} hover:bg-slate-50 text-slate-700 shadow-xs`}
+              className={`md:hidden p-2 rounded-xl bg-white border ${theme.border} hover:bg-slate-50 text-slate-700 shadow-xs shrink-0`}
+              aria-label="Open sidebar menu"
             >
               <Menu size={18} />
             </button>
 
             {/* Active Support Level Indicator */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <span
-                className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 border ${theme.badge} shadow-xs`}
+                className={`px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold tracking-wide flex items-center gap-1.5 border ${theme.badge} shadow-xs truncate`}
               >
                 <span
-                  className={`w-2 h-2 rounded-full ${
+                  className={`w-2 h-2 rounded-full shrink-0 ${
                     supportLevel === 3
                       ? "bg-rose-500 animate-ping"
                       : supportLevel === 2
@@ -1248,22 +1249,22 @@ export const Chat = () => {
                       : "bg-emerald-400"
                   }`}
                 />
-                {theme.label}
+                <span className="truncate">{theme.label}</span>
               </span>
 
               {supportLevel === 3 && (
                 <button
                   onClick={() => setShowEmergency(true)}
-                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black transition flex items-center gap-1 shadow-sm cursor-pointer"
+                  className="px-2 sm:px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[10px] sm:text-[11px] font-black transition flex items-center gap-1 shadow-sm cursor-pointer shrink-0"
                 >
-                  <PhoneCall size={12} /> Call 14416
+                  <PhoneCall size={12} /> <span className="hidden xs:inline sm:inline">Call </span>14416
                 </button>
               )}
             </div>
           </div>
 
           {/* Right Header Controls (Live Clock, TTS Audio, Camera) */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {liveClock && (
               <div className={`hidden lg:flex items-center gap-1.5 text-xs ${theme.textSecondary} bg-white px-3 py-1.5 rounded-xl border ${theme.border} shadow-xs font-medium`}>
                 <Clock size={13} />
@@ -1286,6 +1287,7 @@ export const Chat = () => {
                   ? theme.badge
                   : `bg-white text-slate-600 border ${theme.border} hover:text-slate-900`
               }`}
+              aria-label="Toggle text to speech"
             >
               {isSpeaking ? (
                 <Volume2 size={16} className="animate-pulse text-emerald-600" />
@@ -1302,10 +1304,11 @@ export const Chat = () => {
                 <button
                   onClick={stopCamera}
                   title="Turn Off Live Camera Preview"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold transition flex items-center gap-1.5 text-xs shadow-xs cursor-pointer hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold transition flex items-center gap-1 text-xs shadow-xs cursor-pointer hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
                 >
                   <VideoOff size={15} />
-                  <span>Camera Live</span>
+                  <span className="hidden sm:inline">Camera Live</span>
+                  <span className="sm:hidden text-[10px]">Live</span>
                 </button>
               ) : (
                 <button
@@ -1313,7 +1316,7 @@ export const Chat = () => {
                     startCamera();
                   }}
                   title="Enable Facial Emotion Mirror (100% Local & Private)"
-                  className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
+                  className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
                 >
                   <Video size={16} />
                   <span className="hidden sm:inline">Camera</span>
@@ -1340,8 +1343,8 @@ export const Chat = () => {
         )}
 
         {/* Message Thread */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          <div className="max-w-3xl mx-auto flex flex-col gap-4 pb-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-3 sm:space-y-4">
+          <div className="max-w-3xl mx-auto flex flex-col gap-3 sm:gap-4 pb-4">
             {loadingMessages ? (
               <div className="space-y-4 py-8">
                 <div className="w-2/3 h-14 bg-slate-200/60 rounded-2xl animate-pulse" />
@@ -1358,7 +1361,7 @@ export const Chat = () => {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2 }}
-                  className={`max-w-[85%] sm:max-w-[78%] p-4 sm:p-5 rounded-3xl relative group shadow-sm leading-relaxed select-text border ${
+                  className={`max-w-[88%] sm:max-w-[78%] p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl relative group shadow-sm leading-relaxed select-text border ${
                     msg.sender === "user"
                       ? `${theme.userBubble} self-end rounded-br-sm`
                       : `${theme.aiBubble} self-start rounded-bl-sm`
@@ -1370,19 +1373,19 @@ export const Chat = () => {
                         type="text"
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
-                        className={`w-full ${theme.input} px-3 py-2 rounded-xl text-sm outline-none`}
+                        className={`w-full ${theme.input} px-3 py-2 rounded-xl text-base sm:text-sm outline-none`}
                         autoFocus
                       />
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => setEditingMsgId(null)}
-                          className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800"
+                          className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={() => handleEditMessage(msg.id)}
-                          className={`px-3 py-1 ${theme.accentButton} rounded-lg text-xs font-bold flex items-center gap-1`}
+                          className={`px-3 py-1 ${theme.accentButton} rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer`}
                         >
                           <Check size={13} /> Save
                         </button>
@@ -1390,7 +1393,7 @@ export const Chat = () => {
                     </div>
                   ) : (
                     <div>
-                      <p className="text-[14px] sm:text-[15px] whitespace-pre-wrap break-words leading-relaxed font-normal">
+                      <p className="text-[13.5px] sm:text-[15px] whitespace-pre-wrap break-words leading-relaxed font-normal">
                         {msg.text}
                       </p>
 
@@ -1416,7 +1419,7 @@ export const Chat = () => {
                               setEditingMsgId(msg.id);
                               setEditText(msg.text);
                             }}
-                            className="opacity-0 group-hover:opacity-100 transition p-1 hover:bg-black/10 rounded"
+                            className="opacity-70 md:opacity-0 md:group-hover:opacity-100 transition p-1 hover:bg-black/10 rounded cursor-pointer"
                             title="Edit message"
                           >
                             <Edit2 size={12} />
@@ -1500,10 +1503,10 @@ export const Chat = () => {
         )}
 
         {/* Input Composer */}
-        <footer className={`p-3 sm:p-5 ${theme.headerBg} backdrop-blur-xl border-t ${theme.border} shrink-0`}>
+        <footer className={`p-2.5 sm:p-5 ${theme.headerBg} backdrop-blur-xl border-t ${theme.border} shrink-0 safe-bottom`}>
           <form
             onSubmit={handleSendMessage}
-            className="max-w-3xl mx-auto relative flex items-center gap-2"
+            className="max-w-3xl mx-auto relative flex items-center gap-1.5 sm:gap-2"
           >
             {/* Voice Input Microphone Button */}
             {sttSupported && (
@@ -1517,7 +1520,7 @@ export const Chat = () => {
                     ? "Processing voice..."
                     : "Tap to speak (auto-submits when done speaking)"
                 }
-                className={`p-3 rounded-2xl border transition cursor-pointer shrink-0 ${
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border transition cursor-pointer shrink-0 ${
                   voiceState === "listening"
                     ? theme.micActive
                     : voiceState === "processing"
@@ -1526,7 +1529,7 @@ export const Chat = () => {
                 }`}
                 aria-label="Toggle voice input"
               >
-                <Mic size={20} />
+                <Mic size={19} />
               </button>
             )}
 
@@ -1542,21 +1545,21 @@ export const Chat = () => {
                   ? "Submitting voice message..."
                   : "Type what's on your mind or tap the mic..."
               }
-              className={`w-full rounded-2xl px-5 py-3.5 text-sm sm:text-base outline-none border transition shadow-xs font-normal ${theme.input}`}
+              className={`w-full rounded-xl sm:rounded-2xl px-3.5 sm:px-5 py-2.5 sm:py-3.5 text-base sm:text-base outline-none border transition shadow-xs font-normal ${theme.input}`}
             />
 
             {/* Manual Send Button */}
             <button
               type="submit"
               disabled={!newMessage.trim()}
-              className={`p-3.5 rounded-2xl transition shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${theme.sendButton}`}
+              className={`p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl transition shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${theme.sendButton}`}
               aria-label="Send message"
             >
               <Send size={18} />
             </button>
           </form>
 
-          <div className={`max-w-3xl mx-auto mt-2 flex items-center justify-between text-[11px] ${theme.textMuted} px-2`}>
+          <div className={`max-w-3xl mx-auto mt-1 sm:mt-2 flex flex-col sm:flex-row items-center justify-between text-[10px] sm:text-[11px] ${theme.textMuted} px-1 sm:px-2 gap-0.5 sm:gap-2 text-center sm:text-left`}>
             <span>Confidential AI companion • Voice auto-submits on speech end</span>
             {supportLevel === 2 && (
               <span className="font-semibold text-amber-700">
@@ -1569,19 +1572,19 @@ export const Chat = () => {
 
       {/* DOCKED / FLOATING LIVE CAMERA PREVIEW CARD (Visible, responsive, and verified nonzero dimensions) */}
       {cameraActive && (
-        <div className="fixed bottom-24 right-4 sm:bottom-28 sm:right-6 z-40 w-64 sm:w-72 rounded-3xl border-2 border-emerald-500 bg-slate-950/95 shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
+        <div className="fixed bottom-20 right-2.5 sm:bottom-28 sm:right-6 z-40 w-44 sm:w-72 rounded-2xl sm:rounded-3xl border-2 border-emerald-500 bg-slate-950/95 shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
           {/* Top Title Bar of Preview Card */}
-          <div className="px-3.5 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs text-white">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span className="font-bold text-[11px] tracking-wide">Live Camera Feed</span>
+          <div className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs text-white">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="font-bold text-[10px] sm:text-[11px] tracking-wide">Live Camera Feed</span>
             </div>
             <button
               onClick={stopCamera}
               className="p-1 rounded-lg hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition cursor-pointer"
               title="Close camera preview"
             >
-              <X size={15} />
+              <X size={14} />
             </button>
           </div>
 
@@ -1596,21 +1599,21 @@ export const Chat = () => {
             />
             {!cameraReady && !cameraError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300 text-xs gap-2">
-                <Loader2 size={20} className="animate-spin text-emerald-400" />
-                <span>Starting video stream...</span>
+                <Loader2 size={18} className="animate-spin text-emerald-400" />
+                <span className="text-[10px] sm:text-xs">Starting stream...</span>
               </div>
             )}
           </div>
 
           {/* Mirror Sentiment Badge Bar */}
-          <div className="px-3 py-1.5 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
-            <span className="flex items-center gap-1.5">
+          <div className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-300">
+            <span className="flex items-center gap-1 sm:gap-1.5 truncate">
               <span>Mirror:</span>
-              <strong className="text-emerald-400 capitalize">
+              <strong className="text-emerald-400 capitalize truncate">
                 {detectedExpression ? detectedExpression : "Calm & Centered"}
               </strong>
             </span>
-            <span className="text-[10px] text-slate-400">100% on-device</span>
+            <span className="text-[9px] sm:text-[10px] text-slate-400 shrink-0 ml-1">100% on-device</span>
           </div>
         </div>
       )}
@@ -1629,19 +1632,19 @@ export const Chat = () => {
               initial={{ scale: 0.95, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 text-center shadow-2xl relative text-slate-900"
+              className="w-[92vw] max-w-md bg-white border border-slate-200 rounded-3xl p-5 sm:p-8 text-center shadow-2xl relative text-slate-900 max-h-[92vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto mb-4">
-                <Video size={28} />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto mb-3.5 sm:mb-4">
+                <Video size={26} />
               </div>
-              <h2 className="text-xl font-bold font-['Outfit'] mb-2 text-slate-900">
+              <h2 className="text-lg sm:text-xl font-bold font-['Outfit'] mb-2 text-slate-900">
                 Would you like to enable camera-based support?
               </h2>
               <p className={`text-xs ${theme.textSecondary} leading-relaxed mb-4`}>
                 CalmChain can optionally estimate your facial sentiment in real time to adjust emotional support and comforting grounding tools.
               </p>
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-left mb-6 space-y-1.5">
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-left mb-5 sm:mb-6 space-y-1.5">
                 <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800">
                   <Sparkles size={14} /> 100% Private & Local
                 </div>
@@ -1649,16 +1652,16 @@ export const Chat = () => {
                   All face emotion detection runs locally on your device via Face-API. Zero video feeds or biometrics are ever recorded, stored, or uploaded. Never used as a diagnosis.
                 </p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-2.5 sm:gap-3">
                 <button
                   onClick={handleDismissCamera}
-                  className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer border border-slate-200"
+                  className="flex-1 py-2.5 sm:py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer border border-slate-200"
                 >
                   Not Now
                 </button>
                 <button
                   onClick={handleAllowCamera}
-                  className={`flex-1 py-3 rounded-xl ${theme.accentButton} text-xs font-black shadow-md transition cursor-pointer`}
+                  className={`flex-1 py-2.5 sm:py-3 rounded-xl ${theme.accentButton} text-xs font-black shadow-md transition cursor-pointer`}
                 >
                   Allow Camera
                 </button>
@@ -1682,7 +1685,7 @@ export const Chat = () => {
               initial={{ scale: 0.95, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="bg-white rounded-3xl p-6 sm:p-7 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4 text-slate-900"
+              className="bg-white rounded-3xl p-5 sm:p-7 max-w-sm w-[92vw] shadow-2xl border border-slate-200 space-y-4 text-slate-900 max-h-[92vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 text-rose-600">
