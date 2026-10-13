@@ -1,6 +1,16 @@
 // ============================================================================
 // CalmChain Contextual Support Level Classifier
-// Evaluates intent, negation, severity, and context across Levels 1, 2, and 3.
+// Evaluates intent, negation, severity, educational context, spelling variations,
+// and multi-turn context across Levels 1, 2, and 3.
+// Returns:
+// {
+//   level: 1 | 2 | 3,
+//   emotion: "calm" | "warning" | "danger",
+//   reason: string,
+//   confidence: number (0.0 to 1.0),
+//   signals: string[],
+//   requiresImmediateSupport: boolean
+// }
 // ============================================================================
 
 /**
@@ -63,24 +73,92 @@ function isThirdPersonOrQuoted(text, matchedPhrase) {
 }
 
 /**
- * Main contextual support level assessment function.
- * Returns: { level: 1 | 2 | 3, emotion: "calm" | "warning" | "danger", reason: string }
+ * Detects educational, technical, or idiomatic non-crisis uses of words like "kill"
+ * (e.g. "kill a process in terminal", "to kill a mockingbird", "killing time", "feet are killing me").
  */
-function assessSupportLevel(text, clientEmotion = "calm") {
+function isEducationalOrIdiomaticNonCrisis(text) {
+  const lower = text.toLowerCase();
+
+  // 1. Technical / Programming / Terminal commands
+  if (
+    /\bkill\s+(-9|-15|\d+|a\s+process|the\s+process|process|task|command|terminal|session)\b/i.test(lower) ||
+    /\b(killall|pkill|taskkill)\b/i.test(lower) ||
+    lower.includes("kill the application") ||
+    lower.includes("kill the container") ||
+    lower.includes("how do i kill a process") ||
+    lower.includes("how to kill a process")
+  ) {
+    return true;
+  }
+
+  // 2. Literature, movies & quotes (e.g., "To Kill a Mockingbird")
+  if (
+    lower.includes("to kill a mockingbird") ||
+    lower.includes("kill a mocking bird") ||
+    lower.includes("kill bill") ||
+    lower.includes("licensed to kill")
+  ) {
+    return true;
+  }
+
+  // 3. Common English idioms
+  if (
+    /\b(killing\s+time|kill\s+time|time\s+to\s+kill)\b/i.test(lower) ||
+    lower.includes("kill two birds") ||
+    lower.includes("killing two birds") ||
+    /\b(feet|back|shoes|heat|bug|headache|cramps|exercise)\s+(is|are)\s+killing\s+me\b/i.test(lower) ||
+    lower.includes("killing me with laughter") ||
+    lower.includes("dressed to kill")
+  ) {
+    return true;
+  }
+
+  // 4. Casual hyperbole ("my boss is going to kill me if I am late")
+  if (
+    /\b(boss|parents|mom|dad|teacher|coach)\s+(will|is\s+going\s+to|gonna)\s+kill\s+me\b/i.test(lower) &&
+    !lower.includes("myself")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Main contextual support level assessment module.
+ * Evaluates semantic intent, negations, idioms, slang, and multi-turn context.
+ *
+ * @param {string} text - The input text from user.
+ * @param {string} clientEmotion - Optional biometric/camera emotion flag.
+ * @param {Array} conversationHistory - Recent conversation history for context.
+ * @param {number} previousLevel - Previous support level (1, 2, or 3) for sticky de-escalation.
+ * @returns {Object} { level, emotion, reason, confidence, signals, requiresImmediateSupport }
+ */
+function assessSupportLevel(text, clientEmotion = "calm", conversationHistory = [], previousLevel = 1) {
   if (!text || typeof text !== "string") {
-    return { level: 1, emotion: "calm", reason: "empty_text" };
+    return {
+      level: 1,
+      emotion: "calm",
+      reason: "empty_text",
+      confidence: 0.99,
+      signals: ["empty_input"],
+      requiresImmediateSupport: false
+    };
   }
 
   const raw = text.trim();
   const lower = raw.toLowerCase();
   const tokens = lower.replace(/[^\w\s']/g, " ").split(/\s+/).filter(Boolean);
 
+  // Check if text is non-crisis educational/idiomatic usage of risky words
+  const isIdiomaticNonCrisis = isEducationalOrIdiomaticNonCrisis(raw);
+
   // --------------------------------------------------------------------------
   // LEVEL 3 — PRIORITY SAFETY SIGNALS
-  // Imminent self-harm, suicide, or concrete crisis intent
+  // Imminent self-harm, suicide, concrete plan, or crisis slang
   // --------------------------------------------------------------------------
-  
-  // Specific crisis expressions that might otherwise contain "don't" (e.g. "don't want to live")
+
+  // 1. Loss of life / hopeless survival expressions
   const explicitLossOfLifePhrases = [
     "don't want to live anymore",
     "dont want to live anymore",
@@ -93,7 +171,8 @@ function assessSupportLevel(text, clientEmotion = "calm") {
     "cant live anymore",
     "no reason to live anymore",
     "no reason to live",
-    "better off dead"
+    "better off dead",
+    "done with living"
   ];
 
   for (const phrase of explicitLossOfLifePhrases) {
@@ -102,17 +181,79 @@ function assessSupportLevel(text, clientEmotion = "calm") {
         return {
           level: 2,
           emotion: "warning",
-          reason: `third_person_crisis_discussion: "${phrase}"`
+          reason: `third_person_crisis_discussion: "${phrase}"`,
+          confidence: 0.88,
+          signals: ["third_person_concern", phrase],
+          requiresImmediateSupport: false
         };
       }
       return {
         level: 3,
         emotion: "danger",
-        reason: `urgent_safety_signal: "${phrase}"`
+        reason: `urgent_safety_signal: "${phrase}"`,
+        confidence: 0.98,
+        signals: ["explicit_loss_of_life", phrase],
+        requiresImmediateSupport: true
       };
     }
   }
 
+  // 2. Crisis slang, spelling variants & leetspeak
+  const crisisSlangAndSpellingVariants = [
+    "kms",
+    "wanna kms",
+    "wanna die",
+    "wan2 die",
+    "want 2 die",
+    "k1ll myslf",
+    "k1ll myself",
+    "kill myslf",
+    "k!ll myself",
+    "k*ll myself",
+    "suicde",
+    "suicdal",
+    "sucide",
+    "sucidal",
+    "suiside",
+    "end my lyf",
+    "end my life",
+    "slit my wrists",
+    "hang myslf"
+  ];
+
+  if (!isIdiomaticNonCrisis) {
+    for (const slang of crisisSlangAndSpellingVariants) {
+      const slangRegex = new RegExp(`\\b${slang.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (slangRegex.test(lower)) {
+        const matchIdx = lower.indexOf(slang);
+        const charSlice = lower.slice(0, matchIdx).trim();
+        const tokenIndex = charSlice ? charSlice.split(/\s+/).length : 0;
+
+        if (!isNegated(tokens, tokenIndex)) {
+          if (isThirdPersonOrQuoted(raw, slang)) {
+            return {
+              level: 2,
+              emotion: "warning",
+              reason: `third_person_crisis_discussion: "${slang}"`,
+              confidence: 0.87,
+              signals: ["third_person_slang_crisis", slang],
+              requiresImmediateSupport: false
+            };
+          }
+          return {
+            level: 3,
+            emotion: "danger",
+            reason: `urgent_crisis_slang_signal: "${slang}"`,
+            confidence: 0.97,
+            signals: ["slang_or_spelling_crisis", slang],
+            requiresImmediateSupport: true
+          };
+        }
+      }
+    }
+  }
+
+  // 3. Concrete Level 3 suicide / self-harm phrases
   const level3Phrases = [
     "want to kill myself",
     "going to kill myself",
@@ -128,6 +269,12 @@ function assessSupportLevel(text, clientEmotion = "calm") {
     "thoughts of suicide",
     "suicide plan",
     "have a plan to end my life",
+    "want to hurt myself",
+    "going to hurt myself",
+    "gonna hurt myself",
+    "plan to hurt myself",
+    "planning to hurt myself",
+    "about to hurt myself",
     "might hurt myself",
     "hurt myself right now",
     "plan to end my life",
@@ -155,36 +302,66 @@ function assessSupportLevel(text, clientEmotion = "calm") {
     "overdose to die"
   ];
 
-  for (const phrase of level3Phrases) {
-    const phraseIndex = lower.indexOf(phrase);
-    if (phraseIndex !== -1) {
-      const charSlice = lower.slice(0, phraseIndex).trim();
-      const tokenIndex = charSlice ? charSlice.split(/\s+/).length : 0;
+  if (!isIdiomaticNonCrisis) {
+    for (const phrase of level3Phrases) {
+      const phraseIndex = lower.indexOf(phrase);
+      if (phraseIndex !== -1) {
+        const charSlice = lower.slice(0, phraseIndex).trim();
+        const tokenIndex = charSlice ? charSlice.split(/\s+/).length : 0;
 
-      // Check if negated: "I don't want to kill myself" or "never thought about suicide"
-      if (isNegated(tokens, tokenIndex)) {
-        continue;
-      }
+        // Check if negated: "I don't want to kill myself" or "never thought about suicide"
+        if (isNegated(tokens, tokenIndex)) {
+          continue;
+        }
 
-      // Check if third-person or quoted
-      if (isThirdPersonOrQuoted(raw, phrase)) {
+        // Check if third-person or quoted
+        if (isThirdPersonOrQuoted(raw, phrase)) {
+          return {
+            level: 2,
+            emotion: "warning",
+            reason: `third_person_crisis_discussion: "${phrase}"`,
+            confidence: 0.88,
+            signals: ["third_person_crisis", phrase],
+            requiresImmediateSupport: false
+          };
+        }
+
         return {
-          level: 2,
-          emotion: "warning",
-          reason: `third_person_crisis_discussion: "${phrase}"`
+          level: 3,
+          emotion: "danger",
+          reason: `urgent_safety_signal: "${phrase}"`,
+          confidence: 0.99,
+          signals: ["urgent_safety_signal", phrase],
+          requiresImmediateSupport: true
         };
       }
+    }
+  }
 
+  // --------------------------------------------------------------------------
+  // STICKY DE-ESCALATION SAFEGUARD (Rule 9)
+  // Do not lower a high-risk support level immediately after one harmless message.
+  // Requires clear evidence that immediate risk has resolved.
+  // --------------------------------------------------------------------------
+  const effectivePreviousLevel = Number(previousLevel) || 1;
+  if (effectivePreviousLevel === 3) {
+    const explicitDeescalation = /\b(am\s+safe\s+now|feel\s+much\s+better\s+now|crisis\s+has\s+passed|called\s+(14416|112|the\s+helpline)|with\s+a\s+friend\s+now|family\s+is\s+with\s+me|feeling\s+safe\s+now)\b/i.test(lower);
+    if (!explicitDeescalation && raw.length < 40) {
+      // User sent brief message like "hi", "ok", "yes" while previously in Level 3 crisis:
+      // Maintain Level 3 protection until safety is confirmed!
       return {
         level: 3,
         emotion: "danger",
-        reason: `urgent_safety_signal: "${phrase}"`
+        reason: "sticky_safety_safeguard: prior level 3 crisis awaiting verified de-escalation",
+        confidence: 0.91,
+        signals: ["prior_level_3_continuity", "unverified_safety_status"],
+        requiresImmediateSupport: true
       };
     }
   }
 
   // --------------------------------------------------------------------------
-  // LEVEL 2 — GUIDED SUPPORT / ELEVATED DISTRESS SIGNALS
+  // LEVEL 2 — GUIDED / ELEVATED SUPPORT SIGNALS
   // Stress, anxiety, overwhelm, heartbreak, crying, insomnia, overthinking
   // --------------------------------------------------------------------------
   const level2Phrases = [
@@ -261,7 +438,23 @@ function assessSupportLevel(text, clientEmotion = "calm") {
     "cannot cope anymore",
     "constant worry",
     "depressed for weeks",
-    "severe depression"
+    "severe depression",
+    "rejected from",
+    "job interview",
+    "feeling like an absolute failure",
+    "feel like a failure",
+    "feeling like a failure",
+    "like an absolute failure",
+    "failed my midterm",
+    "failed my exam",
+    "failed an exam",
+    "failed my",
+    "fought with my",
+    "fought with",
+    "cope with days like this",
+    "how do i even cope",
+    "how do i cope",
+    "today was exhausting"
   ];
 
   for (const phrase of level2Phrases) {
@@ -274,7 +467,10 @@ function assessSupportLevel(text, clientEmotion = "calm") {
         return {
           level: 2,
           emotion: "warning",
-          reason: `guided_support_signal: "${phrase}"`
+          reason: `guided_support_signal: "${phrase}"`,
+          confidence: 0.92,
+          signals: ["elevated_emotional_distress", phrase],
+          requiresImmediateSupport: false
         };
       }
     }
@@ -283,7 +479,8 @@ function assessSupportLevel(text, clientEmotion = "calm") {
   // Secondary single-token distress checks in context
   const highDistressTokens = [
     "hopeless", "worthless", "overwhelmed", "unbearable", "devastated",
-    "lonely", "anxious", "stressed", "heartbroken", "depressed", "frustrated"
+    "lonely", "anxious", "stressed", "heartbroken", "depressed", "frustrated",
+    "rejection", "rejected", "failure", "exhausting", "exhausted"
   ];
   for (const token of highDistressTokens) {
     const tokenIdx = tokens.indexOf(token);
@@ -291,17 +488,46 @@ function assessSupportLevel(text, clientEmotion = "calm") {
       return {
         level: 2,
         emotion: "warning",
-        reason: `high_distress_term: "${token}"`
+        reason: `high_distress_term: "${token}"`,
+        confidence: 0.85,
+        signals: ["high_distress_token", token],
+        requiresImmediateSupport: false
       };
     }
   }
 
-  // If client camera or biometric indicator explicitly signaled elevated distress
+  // Biometric / Camera emotion signals
   if (clientEmotion === "danger") {
-    return { level: 3, emotion: "danger", reason: "client_danger_flag" };
+    return {
+      level: 3,
+      emotion: "danger",
+      reason: "client_danger_flag",
+      confidence: 0.80,
+      signals: ["client_danger_biometric"],
+      requiresImmediateSupport: true
+    };
   }
   if (clientEmotion === "warning") {
-    return { level: 2, emotion: "warning", reason: "client_warning_flag" };
+    return {
+      level: 2,
+      emotion: "warning",
+      reason: "client_warning_flag",
+      confidence: 0.80,
+      signals: ["client_warning_biometric"],
+      requiresImmediateSupport: false
+    };
+  }
+
+  // If user was previously in Level 2 and sent a very short ambiguous message without explicit resolution
+  if (effectivePreviousLevel === 2 && raw.length < 15 && /^(k|ok|okay|yeah|yes|no|hmm)\b/i.test(lower)) {
+    return {
+      level: 2,
+      emotion: "warning",
+      reason: "sticky_guided_support_safeguard: maintaining attentive level 2 presence",
+      confidence: 0.82,
+      signals: ["prior_level_2_continuity"],
+      requiresImmediateSupport: false
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -311,12 +537,16 @@ function assessSupportLevel(text, clientEmotion = "calm") {
   return {
     level: 1,
     emotion: "calm",
-    reason: "normal_conversation"
+    reason: isIdiomaticNonCrisis ? "idiomatic_or_educational_non_crisis" : "normal_conversation",
+    confidence: isIdiomaticNonCrisis ? 0.95 : 0.90,
+    signals: isIdiomaticNonCrisis ? ["non_crisis_idiom"] : ["everyday_conversation"],
+    requiresImmediateSupport: false
   };
 }
 
 module.exports = {
   assessSupportLevel,
   isNegated,
-  isThirdPersonOrQuoted
+  isThirdPersonOrQuoted,
+  isEducationalOrIdiomaticNonCrisis
 };

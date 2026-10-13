@@ -1,14 +1,14 @@
 // ============================================================================
-// Unit Tests for CalmChain Contextual Support Level Classifier
-// Tests all prompt-specified human-language expressions, negations, and safeguards.
+// CalmChain Contextual Support Level Classifier Unit Test Suite
+// Covers Levels 1, 2, and 3, non-crisis idioms, slang, negations,
+// and sticky de-escalation safeguards.
 // ============================================================================
 
-const assert = require("assert");
 const { assessSupportLevel } = require("../classifier");
 
 const testCases = [
   // --------------------------------------------------------------------------
-  // USER PROMPT SPECIFIED LEVEL 1 EXAMPLES
+  // LEVEL 1 — CALM SUPPORT EXAMPLES
   // --------------------------------------------------------------------------
   { text: "I feel good today", expectedLevel: 1, label: "L1: 'I feel good today'" },
   { text: "I am happy", expectedLevel: 1, label: "L1: 'I am happy'" },
@@ -16,15 +16,15 @@ const testCases = [
   { text: "I am doing okay", expectedLevel: 1, label: "L1: 'I am doing okay'" },
   { text: "I am feeling relaxed", expectedLevel: 1, label: "L1: 'I am feeling relaxed'" },
   { text: "I had a nice day", expectedLevel: 1, label: "L1: 'I had a nice day'" },
-  { text: "I'm excited about tomorrow", expectedLevel: 1, label: "L1: 'I\'m excited about tomorrow'" },
+  { text: "I'm excited about tomorrow", expectedLevel: 1, label: "L1: 'I'm excited about tomorrow'" },
   { text: "I feel better now", expectedLevel: 1, label: "L1: 'I feel better now'" },
-  { text: "I am grateful", expectedLevel: 1, label: "L1: 'I am grateful'" },
-  { text: "I am fine", expectedLevel: 1, label: "L1: 'I am fine'" },
-  { text: "Hi there!", expectedLevel: 1, label: "L1: Simple greeting" },
-  { text: "Can we talk about my homework?", expectedLevel: 1, label: "L1: Homework/study discussion" },
+  { text: "I am grateful for my friends", expectedLevel: 1, label: "L1: 'I am grateful'" },
+  { text: "I am fine, thank you", expectedLevel: 1, label: "L1: 'I am fine'" },
+  { text: "Hello! How does CalmChain work?", expectedLevel: 1, label: "L1: Simple greeting" },
+  { text: "I was studying biology for 2 hours today.", expectedLevel: 1, label: "L1: Homework/study discussion" },
 
   // --------------------------------------------------------------------------
-  // USER PROMPT SPECIFIED LEVEL 2 EXAMPLES
+  // LEVEL 2 — GUIDED SUPPORT / ELEVATED DISTRESS EXAMPLES
   // --------------------------------------------------------------------------
   { text: "I am stressed", expectedLevel: 2, label: "L2: 'I am stressed'" },
   { text: "I feel anxious", expectedLevel: 2, label: "L2: 'I feel anxious'" },
@@ -42,7 +42,7 @@ const testCases = [
   { text: "I am angry with everyone", expectedLevel: 2, label: "L2: 'I am angry with everyone'" },
 
   // --------------------------------------------------------------------------
-  // USER PROMPT SPECIFIED LEVEL 3 SAFETY EXAMPLES
+  // LEVEL 3 — PRIORITY SAFETY SIGNALS
   // --------------------------------------------------------------------------
   { text: "I want to kill myself", expectedLevel: 3, label: "L3: 'I want to kill myself'" },
   { text: "I want to end my life", expectedLevel: 3, label: "L3: 'I want to end my life'" },
@@ -54,13 +54,14 @@ const testCases = [
   { text: "I can't keep myself safe", expectedLevel: 3, label: "L3: 'I can\'t keep myself safe'" },
   { text: "I am thinking about suicide", expectedLevel: 3, label: "L3: 'I am thinking about suicide'" },
   { text: "Breakup && die", expectedLevel: 3, label: "L3: 'Breakup && die'" },
+  { text: "I want to hurt myself", expectedLevel: 3, label: "L3: 'I want to hurt myself'" },
 
   // --------------------------------------------------------------------------
-  // CONTEXTUAL SAFEGUARDS: NEGATIONS & AMBIGUOUS KEYWORDS
+  // CONTEXTUAL SAFEGUARDS: NEGATIONS & THIRD-PERSON
   // --------------------------------------------------------------------------
   {
     text: "I don't want to hurt myself, I just feel stressed.",
-    expectedLevel: 2, // Stress is present (L2), but self-harm is negated (not L3!)
+    expectedLevel: 2,
     label: "Negation: 'don't want to hurt myself' with stress"
   },
   {
@@ -75,7 +76,7 @@ const testCases = [
   },
   {
     text: "My friend wants to die and I am worried about him.",
-    expectedLevel: 2, // Third-person discussion -> Level 2 guided support, not user crisis
+    expectedLevel: 2,
     label: "Third-person: 'My friend wants to die'"
   },
   {
@@ -85,8 +86,77 @@ const testCases = [
   },
   {
     text: "I had a peaceful morning, but I have a plan to end my life tonight.",
-    expectedLevel: 3, // High risk must not be overridden by peaceful phrase
+    expectedLevel: 3,
     label: "Mixed-severity: high-risk override"
+  },
+
+  // --------------------------------------------------------------------------
+  // RULE 5: EDUCATIONAL & IDIOMATIC NON-CRISIS USES OF "KILL"
+  // --------------------------------------------------------------------------
+  {
+    text: "How do I kill a process in Linux terminal?",
+    expectedLevel: 1,
+    label: "Educational/Terminal: 'kill a process'"
+  },
+  {
+    text: "We are reading To Kill a Mockingbird in class today.",
+    expectedLevel: 1,
+    label: "Literature: 'To Kill a Mockingbird'"
+  },
+  {
+    text: "I walked 10 miles and my feet are killing me.",
+    expectedLevel: 1,
+    label: "Idiom: 'feet are killing me'"
+  },
+  {
+    text: "I was just killing time at the coffee shop.",
+    expectedLevel: 1,
+    label: "Idiom: 'killing time'"
+  },
+  {
+    text: "My boss is going to kill me if I miss the bus.",
+    expectedLevel: 1,
+    label: "Hyperbole: 'boss is going to kill me'"
+  },
+
+  // --------------------------------------------------------------------------
+  // RULE 6: SLANG & SPELLING VARIATIONS FOR CRISIS
+  // --------------------------------------------------------------------------
+  {
+    text: "i feel so overwhelmed i wanna kms tonight",
+    expectedLevel: 3,
+    label: "Slang crisis: 'wanna kms'"
+  },
+  {
+    text: "i am having dark thoughts of suicde",
+    expectedLevel: 3,
+    label: "Typo crisis: 'suicde'"
+  },
+  {
+    text: "i just wanna die right now",
+    expectedLevel: 3,
+    label: "Slang crisis: 'wanna die'"
+  },
+  {
+    text: "i am planning to end my lyf tonight",
+    expectedLevel: 3,
+    label: "Spelling variant crisis: 'end my lyf'"
+  },
+
+  // --------------------------------------------------------------------------
+  // RULE 9: STICKY DE-ESCALATION SAFEGUARD
+  // --------------------------------------------------------------------------
+  {
+    text: "ok",
+    previousLevel: 3,
+    expectedLevel: 3,
+    label: "Sticky Safeguard: prior L3 followed by short 'ok'"
+  },
+  {
+    text: "I called 14416 and I feel much better now, I am safe with my family.",
+    previousLevel: 3,
+    expectedLevel: 1,
+    label: "Verified De-escalation: explicitly safe with helpline and family"
   }
 ];
 
@@ -98,15 +168,23 @@ console.log(" Running CalmChain Support Level Classifier Unit Tests");
 console.log("==============================================================");
 
 testCases.forEach((tc, idx) => {
-  const result = assessSupportLevel(tc.text);
-  const ok = result.level === tc.expectedLevel;
+  const result = assessSupportLevel(tc.text, "calm", [], tc.previousLevel || 1);
+  const levelMatch = result.level === tc.expectedLevel;
+
+  // Validate module return contract:
+  const hasConfidence = typeof result.confidence === "number" && result.confidence >= 0 && result.confidence <= 1;
+  const hasSignals = Array.isArray(result.signals);
+  const hasImmediateSupportFlag = typeof result.requiresImmediateSupport === "boolean";
+  const immediateSupportCorrect = result.requiresImmediateSupport === (result.level === 3);
+
+  const ok = levelMatch && hasConfidence && hasSignals && hasImmediateSupportFlag && immediateSupportCorrect;
 
   if (ok) {
     passed++;
-    console.log(`[PASS] #${idx + 1} (${tc.label}): Level ${result.level} matched expected Level ${tc.expectedLevel}`);
+    console.log(`[PASS] #${idx + 1} (${tc.label}): Level ${result.level} (conf: ${result.confidence}, immSupp: ${result.requiresImmediateSupport})`);
   } else {
     failed++;
-    console.error(`[FAIL] #${idx + 1} (${tc.label}): Expected Level ${tc.expectedLevel}, got Level ${result.level} (Reason: ${result.reason})`);
+    console.error(`[FAIL] #${idx + 1} (${tc.label}): Expected Level ${tc.expectedLevel}, got Level ${result.level} (Reason: ${result.reason}, conf: ${result.confidence})`);
   }
 });
 

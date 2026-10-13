@@ -7,6 +7,7 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   query,
   where,
@@ -38,7 +39,10 @@ import {
   PhoneCall,
   Sparkles,
   RotateCcw,
-  Loader2
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Trash2
 } from "lucide-react";
 import { EmergencyModal } from "../components/EmergencyModal";
 import { BreathingExerciseModal } from "../components/BreathingExerciseModal";
@@ -59,6 +63,8 @@ export const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null); // { id, title }
+  const [isDeletingChat, setIsDeletingChat] = useState(false);
 
   // Active Refs to prevent stale React closures
   const currentChatIdRef = useRef(null);
@@ -70,6 +76,7 @@ export const Chat = () => {
   const [editingMsgId, setEditingMsgId] = useState(null);
   const [editText, setEditText] = useState("");
   const [isAiReplying, setIsAiReplying] = useState(false);
+  const [lastUserPrompt, setLastUserPrompt] = useState("");
 
   // Modals & Tools
   const [showEmergency, setShowEmergency] = useState(false);
@@ -78,15 +85,17 @@ export const Chat = () => {
   const [showCameraNotice, setShowCameraNotice] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Voice Input (Auto-submit workflow upon speech completion)
-  const [voiceState, setVoiceState] = useState("idle"); // 'idle' | 'listening' | 'processing'
+  // Voice Input (Continuous listening through natural pauses with silence detection & auto-submit)
+  const [voiceState, setVoiceState] = useState("idle"); // 'idle' | 'listening' | 'processing' | 'sent' | 'error'
   const [sttSupported, setSttSupported] = useState(true);
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
-  const finalTranscriptRef = useRef("");
+  const accumulatedFinalTextRef = useRef("");
+  const isListeningRef = useRef(false);
   const hasSubmittedVoiceRef = useRef(false);
   const userCancelledVoiceRef = useRef(false);
   const silenceTimerRef = useRef(null);
+  const submissionLockRef = useRef(false);
 
   // Speech Synthesis (TTS) - Optional audio readout
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -97,6 +106,8 @@ export const Chat = () => {
 
   // Camera & Face-API (Optional, Private, Local)
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState("");
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [detectedExpression, setDetectedExpression] = useState(null);
   const videoRef = useRef(null);
@@ -203,6 +214,7 @@ export const Chat = () => {
       sender: "ai",
       emotion: incoming.emotion || "calm",
       level: incoming.level || 1,
+      canRetry: Boolean(incoming.canRetry || incoming.aiError),
       timestamp: incoming.timestamp || new Date().toISOString()
     };
 
@@ -219,8 +231,8 @@ export const Chat = () => {
       return [...prevMsgs, aiMsgObj];
     });
 
-    // STEP 2: Optional text-to-speech audio (Plays independently; does NOT block or hide text bubble)
-    if (ttsEnabledRef.current && incoming.text) {
+    // STEP 2: Optional text-to-speech audio (Plays independently; never blocks or hides text bubble)
+    if (ttsEnabledRef.current && incoming.text && !incoming.aiError) {
       speakReply(incoming.text);
     }
 
@@ -301,29 +313,36 @@ export const Chat = () => {
           userId: currentUser?.uid || "anonymous",
           text: text,
           emotion: assessed.emotion,
-          history: historyContext
+          history: historyContext,
+          previousLevel: supportLevel
         })
       });
 
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         handleIncomingAssistantMessage(data);
       } else {
-        throw new Error(`HTTP ${res.status}`);
+        // Display clear error if AI provider failed
+        handleIncomingAssistantMessage({
+          text: data.text || "AI service connection error. Please tap Retry to try again.",
+          canRetry: true,
+          aiError: true,
+          level: assessed.level || 1,
+          timestamp: new Date().toISOString()
+        });
       }
     } catch (err) {
       console.warn("[CalmChain] REST fallback error:", err);
       setIsAiReplying(false);
-      // Visible fallback message
       handleIncomingAssistantMessage({
-        text: "I'm right here with you 💙 Take a slow, steady breath. I'm listening closely — feel free to share whatever is on your mind.",
-        emotion: "calm",
+        text: "I am having trouble connecting to the wellness server. Please check your connection and tap Retry.",
+        canRetry: true,
+        aiError: true,
         level: assessed.level || 1,
-        sender: "ai",
         timestamp: new Date().toISOString()
       });
     }
-  }, [currentUser, handleIncomingAssistantMessage]);
+  }, [currentUser, handleIncomingAssistantMessage, supportLevel]);
 
   // AI dispatch helper (Socket.IO with robust REST fallback timeout)
   const dispatchAiRequest = useCallback((text, assessed, currentMsgList) => {
@@ -337,7 +356,8 @@ export const Chat = () => {
         userId: currentUser?.uid,
         text: text,
         emotion: assessed.emotion,
-        history: historyContext
+        history: historyContext,
+        previousLevel: supportLevel
       });
 
       // 6.5s fallback timeout: if socket reply drops, trigger REST fallback
@@ -348,7 +368,7 @@ export const Chat = () => {
     } else {
       callRestAiFallback(text, assessed, currentMsgList);
     }
-  }, [currentUser, callRestAiFallback]);
+  }, [currentUser, callRestAiFallback, supportLevel]);
 
   // Central Message Submitter
   const submitMessage = useCallback(async (textToSend) => {
@@ -356,8 +376,10 @@ export const Chat = () => {
     const activeChatId = currentChatIdRef.current;
     if (!trimmed || !activeChatId || !currentUser) return;
 
-    // Assess support level using centralized classifier
-    const assessed = assessSupportLevel(trimmed);
+    setLastUserPrompt(trimmed);
+
+    // Assess support level using centralized classifier with history & sticky previousLevel
+    const assessed = assessSupportLevel(trimmed, "calm", messagesRef.current, supportLevel);
     setSupportLevel(assessed.level);
     if (assessed.level === 3) setShowEmergency(true);
 
@@ -400,95 +422,142 @@ export const Chat = () => {
     dispatchAiRequest(trimmed, assessed, updated);
   }, [currentUser, newMessage, setSupportLevel, dispatchAiRequest]);
 
-  // 6. VOICE INPUT (Speech Recognition with real-time dictation & reliable auto-submit)
+  // Retry the last message when AI provider fails
+  const handleRetryLastMessage = useCallback(() => {
+    if (lastUserPrompt) {
+      submitMessage(lastUserPrompt);
+    }
+  }, [lastUserPrompt, submitMessage]);
+
+  // 6. CONTINUOUS VOICE RECOGNITION (Listens through natural pauses, accumulates speech, auto-submits once)
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
+      recognition.continuous = true; // Stay active across natural pauses
+      recognition.interimResults = true; // Capture real-time dictation
       recognition.lang = "en-US";
 
+      const processFinalSubmission = (text) => {
+        if (submissionLockRef.current || hasSubmittedVoiceRef.current || userCancelledVoiceRef.current) return;
+        const clean = text.trim();
+        if (!clean) return;
+
+        submissionLockRef.current = true;
+        hasSubmittedVoiceRef.current = true;
+        isListeningRef.current = false;
+        setVoiceState("processing");
+
+        try {
+          recognition.stop();
+        } catch (e) {}
+
+        // Submit the complete sentence
+        submitMessage(clean);
+        accumulatedFinalTextRef.current = "";
+
+        setVoiceState("sent");
+        setTimeout(() => {
+          setVoiceState("idle");
+          hasSubmittedVoiceRef.current = false;
+          submissionLockRef.current = false;
+        }, 1200);
+      };
+
       recognition.onstart = () => {
+        isListeningRef.current = true;
         setVoiceState("listening");
         setVoiceError("");
-        finalTranscriptRef.current = "";
         hasSubmittedVoiceRef.current = false;
         userCancelledVoiceRef.current = false;
+        submissionLockRef.current = false;
       };
 
       recognition.onresult = (event) => {
         let interimText = "";
-        let finalPiece = "";
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
+          const piece = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalPiece += transcript;
+            accumulatedFinalTextRef.current = (
+              accumulatedFinalTextRef.current + " " + piece
+            ).trim();
           } else {
-            interimText += transcript;
+            interimText += piece;
           }
         }
 
-        if (finalPiece) {
-          finalTranscriptRef.current = (
-            finalTranscriptRef.current + " " + finalPiece
-          ).trim();
-          setNewMessage(finalTranscriptRef.current);
+        const liveTranscript = (
+          accumulatedFinalTextRef.current + (interimText ? " " + interimText : "")
+        ).trim();
 
-          // Reset silence timer for automatic submission on speech pause (1.4s)
-          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-          silenceTimerRef.current = setTimeout(() => {
-            if (
-              !hasSubmittedVoiceRef.current &&
-              !userCancelledVoiceRef.current &&
-              finalTranscriptRef.current.trim()
-            ) {
-              setVoiceState("processing");
-              try {
-                recognitionRef.current?.stop();
-              } catch (e) {}
-            }
-          }, 1400);
-        } else if (interimText) {
-          setNewMessage(
-            (finalTranscriptRef.current + " " + interimText).trim()
-          );
+        if (liveTranscript) {
+          setNewMessage(liveTranscript);
         }
+
+        // Configurable silence timeout: 2.0s after the last recognized utterance
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          if (
+            isListeningRef.current &&
+            !userCancelledVoiceRef.current &&
+            !hasSubmittedVoiceRef.current
+          ) {
+            const finalClean = (accumulatedFinalTextRef.current + " " + interimText).trim();
+            if (finalClean) {
+              processFinalSubmission(finalClean);
+            }
+          }
+        }, 2000);
       };
 
       recognition.onerror = (event) => {
         console.warn("Speech recognition notice:", event.error);
-        if (event.error === "not-allowed") {
-          setVoiceError("Microphone permission denied. You can continue typing normally.");
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          isListeningRef.current = false;
+          setVoiceError("Microphone permission denied. Please allow microphone access in browser settings.");
+          setVoiceState("error");
         } else if (event.error !== "no-speech") {
-          setVoiceError("Voice recognition paused. You can continue typing or tap mic again.");
+          // Non-fatal error; don't terminate abruptly unless critical
+          setVoiceError("Voice recognition notice. You can continue speaking or type normally.");
         }
-        setVoiceState("idle");
       };
 
       recognition.onend = () => {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-        // If user cancelled explicitly, ignore
+        // If user cancelled deliberately, do not restart or submit
         if (userCancelledVoiceRef.current) {
+          isListeningRef.current = false;
           setVoiceState("idle");
           return;
         }
 
-        // Auto-submit workflow: submit once when speech completes
-        const textToSubmit = finalTranscriptRef.current.trim() || newMessage.trim();
-        if (!hasSubmittedVoiceRef.current && textToSubmit) {
-          hasSubmittedVoiceRef.current = true;
-          setVoiceState("processing");
-          submitMessage(textToSubmit);
-          finalTranscriptRef.current = "";
-          setTimeout(() => {
-            setVoiceState("idle");
-          }, 400);
+        // If already submitted, reset cleanly
+        if (hasSubmittedVoiceRef.current) {
+          isListeningRef.current = false;
+          return;
+        }
+
+        // If browser abruptly dropped connection while user was still speaking (common in Chrome):
+        // Safely restart recognition to preserve listening continuity across pauses!
+        if (isListeningRef.current) {
+          try {
+            recognition.start();
+            return;
+          } catch (e) {
+            // Cannot restart; fall through to submit what was gathered
+          }
+        }
+
+        // Natural completion
+        const pending = accumulatedFinalTextRef.current.trim() || newMessage.trim();
+        if (pending && !hasSubmittedVoiceRef.current) {
+          processFinalSubmission(pending);
         } else {
+          isListeningRef.current = false;
           setVoiceState("idle");
         }
       };
@@ -513,18 +582,20 @@ export const Chat = () => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
     if (voiceState === "listening" || voiceState === "processing") {
-      // Deliberate user cancel
+      // User deliberately cancelled/stopped recording
       userCancelledVoiceRef.current = true;
+      isListeningRef.current = false;
       try {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       } catch (err) {}
       setVoiceState("idle");
     } else {
-      // Clean start: stop any playing speech synthesis first so bot doesn't listen to itself
+      // Clean start: stop any playing speech synthesis first so bot doesn't transcribe itself
       stopSpeaking();
       userCancelledVoiceRef.current = false;
       hasSubmittedVoiceRef.current = false;
-      finalTranscriptRef.current = "";
+      submissionLockRef.current = false;
+      accumulatedFinalTextRef.current = "";
       setNewMessage("");
       setVoiceError("");
       try {
@@ -537,12 +608,14 @@ export const Chat = () => {
 
   const cancelVoiceInput = () => {
     userCancelledVoiceRef.current = true;
+    isListeningRef.current = false;
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       } catch (e) {}
     }
+    accumulatedFinalTextRef.current = "";
     setVoiceState("idle");
   };
 
@@ -553,19 +626,22 @@ export const Chat = () => {
         recognitionRef.current.stop();
       } catch (e) {}
     }
-    const textToSubmit = finalTranscriptRef.current.trim() || newMessage.trim();
+    const textToSubmit = accumulatedFinalTextRef.current.trim() || newMessage.trim();
     if (textToSubmit && !hasSubmittedVoiceRef.current) {
       hasSubmittedVoiceRef.current = true;
+      isListeningRef.current = false;
       setVoiceState("processing");
       submitMessage(textToSubmit);
-      finalTranscriptRef.current = "";
+      accumulatedFinalTextRef.current = "";
+      setVoiceState("sent");
       setTimeout(() => {
         setVoiceState("idle");
-      }, 400);
+        hasSubmittedVoiceRef.current = false;
+      }, 1200);
     }
   };
 
-  // 7. Face-API lazy loading
+  // 7. Face-API lazy loading (Non-blocking: models load in background without blocking preview)
   useEffect(() => {
     let isMounted = true;
     const loadModels = async () => {
@@ -585,21 +661,32 @@ export const Chat = () => {
     };
   }, []);
 
-  // 8. Camera controls (Explicit, Optional, Private, 100% On-Device)
+  // 8. CAMERA CONTROLS & LIVE STREAM LIFECYCLE (Fixes black camera preview)
   const startCamera = async () => {
+    setCameraError("");
+    setCameraReady(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, facingMode: "user" }
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user"
+        },
+        audio: false
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       streamRef.current = stream;
       setCameraActive(true);
       setShowCameraNotice(false);
     } catch (err) {
       console.warn("Camera access denied or unavailable:", err);
       setCameraActive(false);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setCameraError("Camera permission was denied in your browser settings. You can continue using CalmChain with text or voice.");
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        setCameraError("No camera found on your device.");
+      } else {
+        setCameraError("Camera is currently in use or unavailable. Please check device permissions.");
+      }
       setShowCameraNotice(false);
     }
   };
@@ -613,23 +700,42 @@ export const Chat = () => {
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
+    setCameraReady(false);
     setDetectedExpression(null);
   };
 
-  const handleAllowCamera = () => {
-    sessionStorage.setItem("calmchain_camera_consent_decided", "allowed");
-    setShowCameraNotice(false);
-    startCamera();
-  };
+  // Attach MediaStream to Video Element immediately upon mount with loadedmetadata & safe play()
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      const video = videoRef.current;
+      video.srcObject = streamRef.current;
 
-  const handleDismissCamera = () => {
-    sessionStorage.setItem("calmchain_camera_consent_decided", "dismissed");
-    setShowCameraNotice(false);
-  };
+      const handleMetadata = () => {
+        video
+          .play()
+          .then(() => {
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+              setCameraReady(true);
+            }
+          })
+          .catch((playErr) => {
+            console.warn("Camera autoplay notice:", playErr);
+          });
+      };
 
+      video.onloadedmetadata = handleMetadata;
+
+      // Fallback check if metadata already loaded
+      if (video.readyState >= 2) {
+        handleMetadata();
+      }
+    }
+  }, [cameraActive]);
+
+  // Face-API facial emotion detection timer (Runs purely locally; independent from stream)
   useEffect(() => {
     let interval = null;
-    if (cameraActive && modelsLoaded) {
+    if (cameraActive && cameraReady && modelsLoaded) {
       interval = setInterval(async () => {
         if (videoRef.current && videoRef.current.readyState === 4) {
           try {
@@ -643,7 +749,7 @@ export const Chat = () => {
               setDetectedExpression(dominant);
             }
           } catch (e) {
-            // Frame drop
+            // Silently ignore detection drop
           }
         }
       }, 3500);
@@ -651,7 +757,7 @@ export const Chat = () => {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [cameraActive, modelsLoaded]);
+  }, [cameraActive, cameraReady, modelsLoaded]);
 
   useEffect(() => {
     return () => {
@@ -660,6 +766,17 @@ export const Chat = () => {
       if (pendingAiTimerRef.current) clearTimeout(pendingAiTimerRef.current);
     };
   }, [stopSpeaking]);
+
+  const handleAllowCamera = () => {
+    sessionStorage.setItem("calmchain_camera_consent_decided", "allowed");
+    setShowCameraNotice(false);
+    startCamera();
+  };
+
+  const handleDismissCamera = () => {
+    sessionStorage.setItem("calmchain_camera_consent_decided", "dismissed");
+    setShowCameraNotice(false);
+  };
 
   // 9. Load User's Chat List from Firestore (Safe query without composite index requirement)
   useEffect(() => {
@@ -742,7 +859,7 @@ export const Chat = () => {
     return () => unsubscribe();
   }, [currentChatId, setSupportLevel]);
 
-  // 11. Create New Chat
+  // 11. Create New Chat (Avoids re-sending welcome message on existing chats)
   const createNewChat = async () => {
     if (!currentUser) return;
     try {
@@ -770,6 +887,37 @@ export const Chat = () => {
       setMobileSidebarOpen(false);
     } catch (err) {
       console.error("Error creating new chat:", err);
+    }
+  };
+
+  // Delete Conversation (Authenticated User Ownership Verified)
+  const handleDeleteChat = async () => {
+    if (!chatToDelete || !currentUser) return;
+    setIsDeletingChat(true);
+    try {
+      const targetChat = chats.find((c) => c.id === chatToDelete.id);
+      if (targetChat && targetChat.userId !== currentUser.uid) {
+        console.error("Permission denied: You do not own this conversation.");
+        setIsDeletingChat(false);
+        setChatToDelete(null);
+        return;
+      }
+
+      await deleteDoc(doc(db, "chats", chatToDelete.id));
+
+      if (currentChatIdRef.current === chatToDelete.id) {
+        const remaining = chats.filter((c) => c.id !== chatToDelete.id);
+        if (remaining.length > 0) {
+          setCurrentChatId(remaining[0].id);
+        } else {
+          await createNewChat();
+        }
+      }
+    } catch (err) {
+      console.error("Error deleting conversation from Firestore:", err);
+    } finally {
+      setIsDeletingChat(false);
+      setChatToDelete(null);
     }
   };
 
@@ -808,8 +956,9 @@ export const Chat = () => {
     e?.preventDefault();
     if ((voiceState === "listening" || voiceState === "processing") && recognitionRef.current) {
       userCancelledVoiceRef.current = true;
+      isListeningRef.current = false;
       try {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       } catch (err) {}
       setVoiceState("idle");
     }
@@ -938,23 +1087,37 @@ export const Chat = () => {
                     {groupTitle}
                   </div>
                   {chatList.map((chat) => (
-                    <button
+                    <div
                       key={chat.id}
-                      onClick={() => {
-                        setCurrentChatId(chat.id);
-                        setMobileSidebarOpen(false);
-                      }}
-                      className={`w-full p-3 rounded-xl flex items-center gap-2.5 text-left transition truncate cursor-pointer border ${
+                      className={`group w-full rounded-xl flex items-center justify-between transition border ${
                         currentChatId === chat.id
                           ? `${theme.activeItem} shadow-xs`
                           : `${theme.inactiveItem} border-transparent`
                       }`}
                     >
-                      <MessageSquare size={15} className="shrink-0" />
-                      <span className="truncate flex-1">
-                        {chat.title || "Conversation"}
-                      </span>
-                    </button>
+                      <button
+                        onClick={() => {
+                          setCurrentChatId(chat.id);
+                          setMobileSidebarOpen(false);
+                        }}
+                        className="flex-1 p-2.5 flex items-center gap-2.5 text-left truncate cursor-pointer min-w-0"
+                      >
+                        <MessageSquare size={15} className="shrink-0" />
+                        <span className="truncate flex-1 font-medium text-xs">
+                          {chat.title || "Conversation"}
+                        </span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setChatToDelete(chat);
+                        }}
+                        title="Delete conversation"
+                        className="p-1.5 mr-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               );
@@ -1079,30 +1242,18 @@ export const Chat = () => {
             {/* Camera Privacy Toggle */}
             <div className="relative flex items-center">
               {cameraActive ? (
-                <div className="flex items-center gap-2">
-                  <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-500 shadow-sm bg-slate-900">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <button
-                    onClick={stopCamera}
-                    title="Turn Off Camera"
-                    className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 transition cursor-pointer shadow-xs"
-                  >
-                    <VideoOff size={16} />
-                  </button>
-                </div>
+                <button
+                  onClick={stopCamera}
+                  title="Turn Off Live Camera Preview"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold transition flex items-center gap-1.5 text-xs shadow-xs cursor-pointer hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                >
+                  <VideoOff size={15} />
+                  <span>Camera Live</span>
+                </button>
               ) : (
                 <button
                   onClick={() => {
-                    if (!cameraActive) {
-                      startCamera();
-                    }
+                    startCamera();
                   }}
                   title="Enable Facial Emotion Mirror (100% Local & Private)"
                   className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
@@ -1115,20 +1266,25 @@ export const Chat = () => {
           </div>
         </header>
 
-        {/* Detected Expression Notification (Subtle Local Mirror Banner) */}
-        {cameraActive && detectedExpression && (
-          <div className={`px-6 py-1.5 bg-white/90 border-b ${theme.border} ${theme.textSecondary} text-xs flex items-center justify-between`}>
-            <span className="flex items-center gap-2">
-              <span>🪞 Facial Mirror (Local only):</span>
-              <strong className="capitalize text-emerald-700">{detectedExpression}</strong>
-            </span>
-            <span className="text-[10px] text-slate-400">Zero cloud upload</span>
+        {/* Camera Permission / Device Notice if present */}
+        {cameraError && (
+          <div className="px-6 py-2.5 bg-rose-50 border-b border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={15} className="shrink-0 text-rose-600" />
+              <span>{cameraError}</span>
+            </div>
+            <button
+              onClick={() => setCameraError("")}
+              className="text-slate-400 hover:text-slate-700 text-xs font-bold"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
         {/* Message Thread */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          <div className="max-w-3xl mx-auto flex flex-col gap-4">
+          <div className="max-w-3xl mx-auto flex flex-col gap-4 pb-4">
             {loadingMessages ? (
               <div className="space-y-4 py-8">
                 <div className="w-2/3 h-14 bg-slate-200/60 rounded-2xl animate-pulse" />
@@ -1181,6 +1337,19 @@ export const Chat = () => {
                         {msg.text}
                       </p>
 
+                      {/* Retry Button if AI service had an error */}
+                      {msg.canRetry && (
+                        <div className="mt-2.5 pt-2 border-t border-rose-200 flex items-center justify-between">
+                          <span className="text-[11px] text-rose-700 font-medium">Service connection issue</span>
+                          <button
+                            onClick={handleRetryLastMessage}
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+                          >
+                            <RotateCcw size={12} /> Retry
+                          </button>
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between gap-3 mt-2 text-[10px] opacity-75">
                         <span>{formatMessageTime(msg.timestamp)}</span>
                         {msg.edited && <span>(edited)</span>}
@@ -1215,13 +1384,13 @@ export const Chat = () => {
           </div>
         </div>
 
-        {/* Voice Input Listening / Processing Status Notice */}
+        {/* VOICE INPUT STATUS BANNERS */}
         {voiceState === "listening" && (
           <div className="px-6 py-2.5 bg-emerald-600 text-white text-xs flex items-center justify-between z-20 shadow-md">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
               <span className="font-bold">
-                Listening to your voice... Speak naturally. Voice will automatically submit upon completion.
+                Listening... Speak naturally with pauses. Voice will automatically send when you finish speaking.
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -1250,9 +1419,22 @@ export const Chat = () => {
           </div>
         )}
 
+        {voiceState === "sent" && (
+          <div className="px-6 py-2 bg-emerald-700 text-white text-xs flex items-center gap-2 z-20 shadow-md">
+            <CheckCircle2 size={14} />
+            <span className="font-bold">Voice message submitted!</span>
+          </div>
+        )}
+
         {voiceError && (
-          <div className="px-6 py-2 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs font-medium">
-            {voiceError}
+          <div className="px-6 py-2 bg-rose-50 border-t border-rose-200 text-rose-700 text-xs font-medium flex items-center justify-between">
+            <span>{voiceError}</span>
+            <button
+              onClick={() => setVoiceError("")}
+              className="text-rose-900 font-bold hover:underline cursor-pointer ml-2"
+            >
+              OK
+            </button>
           </div>
         )}
 
@@ -1324,6 +1506,54 @@ export const Chat = () => {
         </footer>
       </main>
 
+      {/* DOCKED / FLOATING LIVE CAMERA PREVIEW CARD (Visible, responsive, and verified nonzero dimensions) */}
+      {cameraActive && (
+        <div className="fixed bottom-24 right-4 sm:bottom-28 sm:right-6 z-40 w-64 sm:w-72 rounded-3xl border-2 border-emerald-500 bg-slate-950/95 shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
+          {/* Top Title Bar of Preview Card */}
+          <div className="px-3.5 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs text-white">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="font-bold text-[11px] tracking-wide">Live Camera Feed</span>
+            </div>
+            <button
+              onClick={stopCamera}
+              className="p-1 rounded-lg hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 transition cursor-pointer"
+              title="Close camera preview"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Actual Video Canvas with verified metadata and nonzero dimensions */}
+          <div className="relative aspect-video w-full bg-black flex items-center justify-center overflow-hidden">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+            {!cameraReady && !cameraError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300 text-xs gap-2">
+                <Loader2 size={20} className="animate-spin text-emerald-400" />
+                <span>Starting video stream...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Mirror Sentiment Badge Bar */}
+          <div className="px-3 py-1.5 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <span>Mirror:</span>
+              <strong className="text-emerald-400 capitalize">
+                {detectedExpression ? detectedExpression : "Calm & Centered"}
+              </strong>
+            </span>
+            <span className="text-[10px] text-slate-400">100% on-device</span>
+          </div>
+        </div>
+      )}
+
       {/* Camera Consent Modal */}
       <AnimatePresence>
         {showCameraNotice && (
@@ -1370,6 +1600,66 @@ export const Chat = () => {
                   className={`flex-1 py-3 rounded-xl ${theme.accentButton} text-xs font-black shadow-md transition cursor-pointer`}
                 >
                   Allow Camera
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Conversation Confirmation Modal */}
+      <AnimatePresence>
+        {chatToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => !isDeletingChat && setChatToDelete(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4 text-slate-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 text-rose-600">
+                <div className="p-3 bg-rose-50 rounded-2xl">
+                  <Trash2 size={24} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Delete Conversation</h3>
+                  <p className="text-xs text-slate-500">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Are you sure you want to delete <span className="font-semibold text-slate-900">"{chatToDelete.title || "this conversation"}"</span>? All messages in this session will be permanently removed.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setChatToDelete(null)}
+                  disabled={isDeletingChat}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteChat}
+                  disabled={isDeletingChat}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                >
+                  {isDeletingChat ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" /> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={13} /> Delete
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>
