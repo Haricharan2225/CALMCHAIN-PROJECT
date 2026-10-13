@@ -340,15 +340,20 @@ function assessSupportLevel(text, clientEmotion = "calm", conversationHistory = 
 
   // --------------------------------------------------------------------------
   // STICKY DE-ESCALATION SAFEGUARD (Rule 9)
-  // Do not lower a high-risk support level immediately after one harmless message.
-  // Requires clear evidence that immediate risk has resolved.
+  // Maintain caution on ambiguous short tokens during active crisis,
+  // but allow greetings, positive expressions, and inquiries to de-escalate.
   // --------------------------------------------------------------------------
   const effectivePreviousLevel = Number(previousLevel) || 1;
   if (effectivePreviousLevel === 3) {
-    const explicitDeescalation = /\b(am\s+safe\s+now|feel\s+much\s+better\s+now|crisis\s+has\s+passed|called\s+(14416|112|the\s+helpline)|with\s+a\s+friend\s+now|family\s+is\s+with\s+me|feeling\s+safe\s+now)\b/i.test(lower);
-    if (!explicitDeescalation && raw.length < 40) {
-      // User sent brief message like "hi", "ok", "yes" while previously in Level 3 crisis:
-      // Maintain Level 3 protection until safety is confirmed!
+    const isHarmlessOrPositive =
+      /\b(hi|hello|hey|good\s+morning|good\s+evening|howdy|greetings|happy|glad|good|great|fine|doing\s+well|calm|relaxed|peaceful|wonderful|what\s+is|how\s+to|explain)\b/i.test(lower);
+
+    const explicitDeescalation =
+      isHarmlessOrPositive ||
+      /\b(am\s+safe\s+now|feel\s+much\s+better\s+now|crisis\s+has\s+passed|called\s+(14416|112|the\s+helpline)|with\s+a\s+friend\s+now|family\s+is\s+with\s+me|feeling\s+safe\s+now)\b/i.test(lower);
+
+    if (!explicitDeescalation && /^(ok|okay|k|yes|yeah|yep|no|nope|hmm|wait)\b/i.test(lower) && raw.length < 20) {
+      // Ambiguous acknowledgment during active crisis: maintain safeguard
       return {
         level: 3,
         emotion: "danger",

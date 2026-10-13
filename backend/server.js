@@ -244,7 +244,27 @@ async function generateAiResponse(text, userEmotion, riskAssessment, chatHistory
     return "The best next step is small: drink a glass of water, unclench your jaw, and focus only on the next 15 minutes. What is one gentle thing you can do for yourself right now?";
   }
 
-  // 4.2 Single-word / minimal conversational replies
+  // 4.2 Greetings & Friendly Introductions
+  if (/^(hi|hello|hey|hii|heyy|howdy|greetings|good\s+morning|good\s+afternoon|good\s+evening)\b/i.test(lower) || lower === "hi" || lower === "hello" || lower === "hey" || lower === "hii") {
+    return "Hi 🌿 Welcome to CalmChain. I'm here to listen and support you. How are you feeling today?";
+  }
+
+  // 4.3 Positive acknowledgements ("I am happy", "feeling good")
+  if (/\b(i\s+am\s+happy|feeling\s+happy|feel\s+happy|so\s+happy|i\s+am\s+good|feeling\s+good|feel\s+good|i\s+feel\s+great|feeling\s+great|great\s+day|wonderful\s+day|doing\s+well|in\s+a\s+good\s+mood)\b/i.test(lower) && !lower.includes("not happy") && !lower.includes("not good")) {
+    return "I'm so glad to hear that! 😊 Taking a moment to appreciate positive feelings is wonderful. What has brought you joy or calm today?";
+  }
+
+  // 4.4 Empathetic responses to sadness ("I am sad", "feeling down")
+  if (/\b(i\s+am\s+sad|feeling\s+sad|feel\s+sad|so\s+sad|feeling\s+down|feel\s+down|feeling\s+low|feel\s+low|feeling\s+unhappy|sad\s+today)\b/i.test(lower)) {
+    return "I hear you, and it's completely okay to feel sad 💙 You don't have to carry this heaviness all by yourself. What's been on your mind today?";
+  }
+
+  // 4.5 Study & Academic Guidance
+  if (/\b(how\s+to\s+study|study\s+tips|exam\s+tips|study\s+advice|prepare\s+for\s+exam|study\s+pressure|exam\s+pressure|exam\s+stress|concentrate\s+on\s+studies|focus\s+on\s+studying)\b/i.test(lower)) {
+    return "When study stress feels high, try breaking your session into 25-minute Pomodoro intervals with 5-minute movement breaks. Take three slow breaths before starting, clear away phone distractions, and tackle just one concept at a time. Which subject or topic are you focusing on right now?";
+  }
+
+  // 4.6 Single-word / minimal conversational replies
   if (/^(yes|yeah|yep|sure|ok|okay)\b/i.test(lower) && cleanText.length < 15) {
     if (priorUserContext.includes("breath") || priorUserContext.includes("grounding")) {
       return "Wonderful. Inhale gently for 4 seconds... and let it out slow for 4 seconds. How does your chest feel as you do that?";
@@ -255,7 +275,7 @@ async function generateAiResponse(text, userEmotion, riskAssessment, chatHistory
     return "That is completely fine. We don't have to push anything. We can just rest quietly together in this sanctuary, or try a gentle grounding exercise whenever you feel like it.";
   }
 
-  // 4.3 Direct Questions & Knowledge Queries
+  // 4.7 Direct Questions & Knowledge Queries
   if (/\b(how are you|how're you|how do you feel)\b/i.test(lower)) {
     return "I'm feeling calm and present with you today, thank you for asking! 🌿 More importantly, how has your heart and mind been treating you today?";
   }

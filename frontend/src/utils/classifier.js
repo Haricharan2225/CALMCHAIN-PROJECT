@@ -303,8 +303,14 @@ export function assessSupportLevel(text, clientEmotion = "calm", conversationHis
   // STICKY DE-ESCALATION SAFEGUARD
   const effectivePreviousLevel = Number(previousLevel) || 1;
   if (effectivePreviousLevel === 3) {
-    const explicitDeescalation = /\b(am\s+safe\s+now|feel\s+much\s+better\s+now|crisis\s+has\s+passed|called\s+(14416|112|the\s+helpline)|with\s+a\s+friend\s+now|family\s+is\s+with\s+me|feeling\s+safe\s+now)\b/i.test(lower);
-    if (!explicitDeescalation && raw.length < 40) {
+    const isHarmlessOrPositive =
+      /\b(hi|hello|hey|good\s+morning|good\s+evening|howdy|greetings|happy|glad|good|great|fine|doing\s+well|calm|relaxed|peaceful|wonderful|what\s+is|how\s+to|explain)\b/i.test(lower);
+
+    const explicitDeescalation =
+      isHarmlessOrPositive ||
+      /\b(am\s+safe\s+now|feel\s+much\s+better\s+now|crisis\s+has\s+passed|called\s+(14416|112|the\s+helpline)|with\s+a\s+friend\s+now|family\s+is\s+with\s+me|feeling\s+safe\s+now)\b/i.test(lower);
+
+    if (!explicitDeescalation && /^(ok|okay|k|yes|yeah|yep|no|nope|hmm|wait)\b/i.test(lower) && raw.length < 20) {
       return {
         level: 3,
         emotion: "danger",

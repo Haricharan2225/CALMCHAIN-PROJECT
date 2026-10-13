@@ -157,6 +157,24 @@ const testCases = [
     previousLevel: 3,
     expectedLevel: 1,
     label: "Verified De-escalation: explicitly safe with helpline and family"
+  },
+  {
+    text: "Hi",
+    previousLevel: 3,
+    expectedLevel: 1,
+    label: "De-escalation: prior L3 followed by greeting 'Hi'"
+  },
+  {
+    text: "I am happy",
+    previousLevel: 3,
+    expectedLevel: 1,
+    label: "De-escalation: prior L3 followed by positive 'I am happy'"
+  },
+  {
+    text: "What is machine learning?",
+    previousLevel: 3,
+    expectedLevel: 1,
+    label: "De-escalation: prior L3 followed by educational inquiry"
   }
 ];
 

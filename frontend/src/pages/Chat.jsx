@@ -87,6 +87,7 @@ export const Chat = () => {
 
   // Voice Input (Continuous listening through natural pauses with silence detection & auto-submit)
   const [voiceState, setVoiceState] = useState("idle"); // 'idle' | 'listening' | 'processing' | 'sent' | 'error'
+  const [voiceLiveTranscript, setVoiceLiveTranscript] = useState("");
   const [sttSupported, setSttSupported] = useState(true);
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
@@ -96,10 +97,12 @@ export const Chat = () => {
   const userCancelledVoiceRef = useRef(false);
   const silenceTimerRef = useRef(null);
   const submissionLockRef = useRef(false);
+  const submitMessageRef = useRef(null);
 
   // Speech Synthesis (TTS) - Optional audio readout
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const isSpeakingRef = useRef(false);
 
   // Live Date/Time
   const [liveClock, setLiveClock] = useState("");
@@ -130,6 +133,10 @@ export const Chat = () => {
   useEffect(() => {
     ttsEnabledRef.current = ttsEnabled;
   }, [ttsEnabled]);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
 
   // 1. Camera Consent Check on sign-in / entry
   useEffect(() => {
@@ -164,6 +171,18 @@ export const Chat = () => {
   const speakReply = useCallback((text) => {
     if (!window.speechSynthesis) return;
     try {
+      // Abort speech recognition immediately so the microphone NEVER listens to or transcribes the assistant's voice!
+      if (recognitionRef.current && isListeningRef.current) {
+        userCancelledVoiceRef.current = true;
+        isListeningRef.current = false;
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+        setVoiceState("idle");
+        setVoiceLiveTranscript("");
+      }
+
       window.speechSynthesis.cancel();
       const cleanSpeakText = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, "").trim();
       if (!cleanSpeakText) return;
@@ -171,12 +190,25 @@ export const Chat = () => {
       const utterance = new SpeechSynthesisUtterance(cleanSpeakText);
       utterance.rate = 0.95;
       utterance.pitch = 1.0;
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        isSpeakingRef.current = true;
+      };
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        // Cool down period before mic can receive input again so lingering speaker audio is ignored
+        setTimeout(() => {
+          isSpeakingRef.current = false;
+        }, 500);
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+      };
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       setIsSpeaking(false);
+      isSpeakingRef.current = false;
     }
   }, []);
 
@@ -186,6 +218,7 @@ export const Chat = () => {
         window.speechSynthesis.cancel();
       } catch (e) {}
       setIsSpeaking(false);
+      isSpeakingRef.current = false;
     }
   }, []);
 
@@ -201,6 +234,18 @@ export const Chat = () => {
 
     // Dismiss typing indicator
     setIsAiReplying(false);
+
+    // Cancel speech recognition so incoming assistant text/audio is never captured by microphone
+    if (recognitionRef.current && isListeningRef.current) {
+      userCancelledVoiceRef.current = true;
+      isListeningRef.current = false;
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+      setVoiceState("idle");
+      setVoiceLiveTranscript("");
+    }
 
     // Update active level and show emergency if Level 3
     if (incoming.level) {
@@ -422,12 +467,17 @@ export const Chat = () => {
     dispatchAiRequest(trimmed, assessed, updated);
   }, [currentUser, newMessage, setSupportLevel, dispatchAiRequest]);
 
+  // Keep submitMessageRef in sync with submitMessage
+  useEffect(() => {
+    submitMessageRef.current = submitMessage;
+  }, [submitMessage]);
+
   // Retry the last message when AI provider fails
   const handleRetryLastMessage = useCallback(() => {
-    if (lastUserPrompt) {
-      submitMessage(lastUserPrompt);
+    if (lastUserPrompt && submitMessageRef.current) {
+      submitMessageRef.current(lastUserPrompt);
     }
-  }, [lastUserPrompt, submitMessage]);
+  }, [lastUserPrompt]);
 
   // 6. CONTINUOUS VOICE RECOGNITION (Listens through natural pauses, accumulates speech, auto-submits once)
   useEffect(() => {
@@ -442,7 +492,7 @@ export const Chat = () => {
 
       const processFinalSubmission = (text) => {
         if (submissionLockRef.current || hasSubmittedVoiceRef.current || userCancelledVoiceRef.current) return;
-        const clean = text.trim();
+        const clean = (text || "").trim();
         if (!clean) return;
 
         submissionLockRef.current = true;
@@ -454,9 +504,12 @@ export const Chat = () => {
           recognition.stop();
         } catch (e) {}
 
-        // Submit the complete sentence
-        submitMessage(clean);
+        // Submit the complete sentence directly to chat — never touches newMessage / typepad
+        if (submitMessageRef.current) {
+          submitMessageRef.current(clean);
+        }
         accumulatedFinalTextRef.current = "";
+        setVoiceLiveTranscript("");
 
         setVoiceState("sent");
         setTimeout(() => {
@@ -476,6 +529,9 @@ export const Chat = () => {
       };
 
       recognition.onresult = (event) => {
+        // Do NOT process speech if assistant is speaking through device speakers!
+        if (isSpeakingRef.current) return;
+
         let interimText = "";
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -493,11 +549,10 @@ export const Chat = () => {
           accumulatedFinalTextRef.current + (interimText ? " " + interimText : "")
         ).trim();
 
-        if (liveTranscript) {
-          setNewMessage(liveTranscript);
-        }
+        // Update live voice transcript for banner display — NEVER type on the user's keypad/newMessage!
+        setVoiceLiveTranscript(liveTranscript);
 
-        // Configurable silence timeout: 2.0s after the last recognized utterance
+        // Auto-submit on natural pause: 1.8s of silence after speech ends
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
           if (
@@ -510,7 +565,7 @@ export const Chat = () => {
               processFinalSubmission(finalClean);
             }
           }
-        }, 2000);
+        }, 1800);
       };
 
       recognition.onerror = (event) => {
@@ -532,6 +587,7 @@ export const Chat = () => {
         if (userCancelledVoiceRef.current) {
           isListeningRef.current = false;
           setVoiceState("idle");
+          setVoiceLiveTranscript("");
           return;
         }
 
@@ -541,25 +597,25 @@ export const Chat = () => {
           return;
         }
 
-        // If browser abruptly dropped connection while user was still speaking (common in Chrome):
-        // Safely restart recognition to preserve listening continuity across pauses!
-        if (isListeningRef.current) {
+        // Auto-submit if speech text was captured
+        const pending = accumulatedFinalTextRef.current.trim();
+        if (pending && !hasSubmittedVoiceRef.current) {
+          processFinalSubmission(pending);
+          return;
+        }
+
+        // If user was still listening and hasn't spoken yet, keep listening across brief pauses
+        if (isListeningRef.current && !isSpeakingRef.current) {
           try {
             recognition.start();
             return;
           } catch (e) {
-            // Cannot restart; fall through to submit what was gathered
+            // Cannot restart; fall through
           }
         }
 
-        // Natural completion
-        const pending = accumulatedFinalTextRef.current.trim() || newMessage.trim();
-        if (pending && !hasSubmittedVoiceRef.current) {
-          processFinalSubmission(pending);
-        } else {
-          isListeningRef.current = false;
-          setVoiceState("idle");
-        }
+        isListeningRef.current = false;
+        setVoiceState("idle");
       };
 
       recognitionRef.current = recognition;
@@ -575,20 +631,15 @@ export const Chat = () => {
         } catch (e) {}
       }
     };
-  }, [submitMessage, newMessage]);
+  }, []); // Mounts once — never aborted by typing or message updates!
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) return;
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
     if (voiceState === "listening" || voiceState === "processing") {
-      // User deliberately cancelled/stopped recording
-      userCancelledVoiceRef.current = true;
-      isListeningRef.current = false;
-      try {
-        recognitionRef.current.abort();
-      } catch (err) {}
-      setVoiceState("idle");
+      // User tapped mic while active: cancel cleanly
+      cancelVoiceInput();
     } else {
       // Clean start: stop any playing speech synthesis first so bot doesn't transcribe itself
       stopSpeaking();
@@ -596,7 +647,7 @@ export const Chat = () => {
       hasSubmittedVoiceRef.current = false;
       submissionLockRef.current = false;
       accumulatedFinalTextRef.current = "";
-      setNewMessage("");
+      setVoiceLiveTranscript("");
       setVoiceError("");
       try {
         recognitionRef.current.start();
@@ -616,27 +667,33 @@ export const Chat = () => {
       } catch (e) {}
     }
     accumulatedFinalTextRef.current = "";
+    setVoiceLiveTranscript("");
     setVoiceState("idle");
   };
 
   const finishVoiceInputAndSend = () => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-    }
-    const textToSubmit = accumulatedFinalTextRef.current.trim() || newMessage.trim();
+    const textToSubmit = accumulatedFinalTextRef.current.trim() || voiceLiveTranscript.trim();
     if (textToSubmit && !hasSubmittedVoiceRef.current) {
+      submissionLockRef.current = true;
       hasSubmittedVoiceRef.current = true;
       isListeningRef.current = false;
       setVoiceState("processing");
-      submitMessage(textToSubmit);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      if (submitMessageRef.current) {
+        submitMessageRef.current(textToSubmit);
+      }
       accumulatedFinalTextRef.current = "";
+      setVoiceLiveTranscript("");
       setVoiceState("sent");
       setTimeout(() => {
         setVoiceState("idle");
         hasSubmittedVoiceRef.current = false;
+        submissionLockRef.current = false;
       }, 1200);
     }
   };
@@ -1386,21 +1443,25 @@ export const Chat = () => {
 
         {/* VOICE INPUT STATUS BANNERS */}
         {voiceState === "listening" && (
-          <div className="px-6 py-2.5 bg-emerald-600 text-white text-xs flex items-center justify-between z-20 shadow-md">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
-              <span className="font-bold">
-                Listening... Speak naturally with pauses. Voice will automatically send when you finish speaking.
+          <div className="px-4 sm:px-6 py-2.5 bg-emerald-600 text-white text-xs flex items-center justify-between z-20 shadow-md">
+            <div className="flex items-center gap-2 overflow-hidden mr-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0" />
+              <span className="font-semibold truncate">
+                {voiceLiveTranscript
+                  ? `🎙️ "${voiceLiveTranscript}"`
+                  : "Listening... Speak naturally with pauses. Voice will automatically send when you finish speaking."}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={finishVoiceInputAndSend}
-                className="px-2.5 py-1 bg-white text-emerald-800 rounded-lg font-bold text-[11px] shadow-xs cursor-pointer hover:bg-emerald-50"
-              >
-                Send Now
-              </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {voiceLiveTranscript && (
+                <button
+                  type="button"
+                  onClick={finishVoiceInputAndSend}
+                  className="px-2.5 py-1 bg-white text-emerald-800 rounded-lg font-bold text-[11px] shadow-xs cursor-pointer hover:bg-emerald-50"
+                >
+                  Send Now
+                </button>
+              )}
               <button
                 type="button"
                 onClick={cancelVoiceInput}
@@ -1476,9 +1537,9 @@ export const Chat = () => {
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder={
                 voiceState === "listening"
-                  ? "Listening to speech (auto-submits when you stop)..."
+                  ? "Recording voice (auto-sends on speech end)..."
                   : voiceState === "processing"
-                  ? "Submitting spoken message..."
+                  ? "Submitting voice message..."
                   : "Type what's on your mind or tap the mic..."
               }
               className={`w-full rounded-2xl px-5 py-3.5 text-sm sm:text-base outline-none border transition shadow-xs font-normal ${theme.input}`}
