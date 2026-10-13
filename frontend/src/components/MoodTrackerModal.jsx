@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Send, Clock, AlertCircle } from "lucide-react";
 import { db } from "../firebase";
-import { collection, addDoc, query, where, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
 import { useTheme } from "../context/ThemeContext";
 
 const MOOD_OPTIONS = [
@@ -30,11 +30,10 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
     setErrorMessage("");
 
     try {
+      // Safe query without composite index requirement
       const q = query(
         collection(db, "moods"),
-        where("userId", "==", currentUser.uid),
-        orderBy("timestamp", "desc"),
-        limit(10)
+        where("userId", "==", currentUser.uid)
       );
 
       const unsubscribe = onSnapshot(
@@ -44,42 +43,21 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
             id: doc.id,
             ...doc.data()
           }));
-          setHistory(logs);
+          logs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          setHistory(logs.slice(0, 10));
           setLoadingHistory(false);
         },
         (err) => {
-          console.warn("Compound mood query fallback:", err);
-          loadFallbackHistory();
+          console.warn("Mood history query notice:", err);
+          setLoadingHistory(false);
         }
       );
 
       return () => unsubscribe();
     } catch (err) {
-      loadFallbackHistory();
+      setLoadingHistory(false);
     }
   }, [isOpen, currentUser]);
-
-  const loadFallbackHistory = async () => {
-    try {
-      const q = query(
-        collection(db, "moods"),
-        where("userId", "==", currentUser.uid)
-      );
-      const unsub = onSnapshot(q, (snapshot) => {
-        const logs = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        logs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-        setHistory(logs.slice(0, 10));
-        setLoadingHistory(false);
-      });
-      return () => unsub();
-    } catch (e) {
-      setLoadingHistory(false);
-      setErrorMessage("Could not load mood history.");
-    }
-  };
 
   const handleSaveMood = async (e) => {
     e.preventDefault();
@@ -133,25 +111,25 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4"
           onClick={onClose}
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className="w-full max-w-2xl bg-[#0F172A] border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative text-slate-100 max-h-[90vh] flex flex-col overflow-hidden"
+            className={`w-full max-w-2xl ${theme.cardBg} border ${theme.border} rounded-3xl p-6 sm:p-8 shadow-2xl relative ${theme.textPrimary} max-h-[90vh] flex flex-col overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className={`flex items-center justify-between pb-4 border-b ${theme.border}`}>
               <div className={`flex items-center gap-2 ${theme.textSecondary}`}>
-                <Sparkles size={20} className="text-emerald-400" />
-                <h2 className="text-xl font-bold font-['Outfit'] text-white">Daily Mood & Wellness Tracker</h2>
+                <Sparkles size={20} />
+                <h2 className="text-xl font-bold font-['Outfit']">Daily Mood & Wellness Tracker</h2>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+                className="p-2 rounded-xl bg-black/25 hover:bg-black/45 text-slate-300 hover:text-white transition cursor-pointer border border-white/10"
               >
                 <X size={18} />
               </button>
@@ -161,7 +139,7 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
               {/* Record Mood Form */}
               <form onSubmit={handleSaveMood} className="space-y-4">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 block">
+                  <label className={`text-xs font-bold uppercase tracking-wider ${theme.textMuted} mb-2 block`}>
                     How is your internal weather right now?
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -172,8 +150,8 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
                         onClick={() => setSelectedMood(m)}
                         className={`p-3 rounded-2xl border text-center transition flex flex-col items-center gap-1.5 cursor-pointer ${
                           selectedMood.id === m.id
-                            ? `${m.color} ring-2 ring-emerald-500/60 shadow-md scale-[1.02] font-bold`
-                            : "border-slate-800 bg-[#1E293B] text-slate-300 hover:bg-slate-800"
+                            ? `${m.color} ring-2 ring-emerald-400 shadow-md scale-[1.02] font-bold`
+                            : "border-white/10 bg-black/25 text-slate-300 hover:bg-black/40"
                         }`}
                       >
                         <span className="text-2xl">{m.emoji}</span>
@@ -184,7 +162,7 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 block">
+                  <label className={`text-xs font-bold uppercase tracking-wider ${theme.textMuted} mb-2 block`}>
                     Optional reflection or note
                   </label>
                   <input
@@ -192,7 +170,7 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="e.g. Took a walk, felt lighter after writing..."
-                    className="w-full px-4 py-3 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-100 placeholder-slate-500 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition"
+                    className={`w-full px-4 py-3 rounded-xl ${theme.input} text-sm outline-none transition`}
                   />
                 </div>
 
@@ -225,19 +203,19 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
               <div className={`pt-4 border-t ${theme.border}`}>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className={`text-sm font-bold ${theme.textSecondary} flex items-center gap-1.5`}>
-                    <Clock size={15} className="text-teal-400" />
+                    <Clock size={15} />
                     Your Recent Mood Timeline
                   </h3>
-                  <span className="text-[11px] text-slate-500">Private & encrypted to your account</span>
+                  <span className={`text-[11px] ${theme.textMuted}`}>Private & encrypted to your account</span>
                 </div>
 
                 {loadingHistory ? (
                   <div className="space-y-2 py-4">
-                    <div className="h-10 bg-slate-800/60 rounded-xl animate-pulse" />
-                    <div className="h-10 bg-slate-800/60 rounded-xl animate-pulse" />
+                    <div className="h-10 bg-black/20 rounded-xl animate-pulse" />
+                    <div className="h-10 bg-black/20 rounded-xl animate-pulse" />
                   </div>
                 ) : history.length === 0 ? (
-                  <div className="text-center py-6 text-slate-400 text-xs bg-slate-900/60 rounded-2xl border border-slate-800">
+                  <div className={`text-center py-6 ${theme.textMuted} text-xs bg-black/20 rounded-2xl border ${theme.border}`}>
                     No mood entries recorded yet. Tap above to log your first reflection!
                   </div>
                 ) : (
@@ -245,18 +223,18 @@ export const MoodTrackerModal = ({ isOpen, onClose, currentUser }) => {
                     {history.map((entry) => (
                       <div
                         key={entry.id}
-                        className="p-3 rounded-xl bg-[#1E293B]/70 border border-slate-800 flex items-start gap-3 text-xs"
+                        className={`p-3 rounded-xl bg-black/25 border ${theme.border} flex items-start gap-3 text-xs`}
                       >
                         <span className="text-xl shrink-0 mt-0.5">{entry.emoji || "🌿"}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold text-slate-200">{entry.moodLabel}</span>
-                            <span className="text-[10px] text-slate-400 shrink-0">
+                            <span className={`text-[10px] ${theme.textMuted} shrink-0`}>
                               {formatTimestamp(entry.createdAt)}
                             </span>
                           </div>
                           {entry.note && (
-                            <p className="text-slate-400 mt-1 truncate">{entry.note}</p>
+                            <p className={`${theme.textSecondary} mt-1 truncate`}>{entry.note}</p>
                           )}
                         </div>
                       </div>

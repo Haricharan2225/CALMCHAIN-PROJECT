@@ -1,6 +1,6 @@
 // ============================================================================
-// CalmChain Frontend Contextual Support Level Classifier
-// Synchronized with backend classifier for zero-latency UI theme switching.
+// CalmChain Contextual Support Level Classifier (Frontend Utility)
+// Evaluates intent, negation, severity, and context across Levels 1, 2, and 3.
 // ============================================================================
 
 export function isNegated(tokens, matchStartIndex) {
@@ -21,7 +21,7 @@ export function isNegated(tokens, matchStartIndex) {
 
 export function isThirdPersonOrQuoted(text, matchedPhrase) {
   const lower = text.toLowerCase();
-  
+
   if (
     (lower.startsWith('"') && lower.endsWith('"')) ||
     lower.includes("song called") ||
@@ -35,7 +35,7 @@ export function isThirdPersonOrQuoted(text, matchedPhrase) {
   }
 
   const thirdPersonSubjectRegex = /\b(he|she|they|my friend|my cousin|my brother|my sister|my classmate|my friend's|someone else|a friend)\s+(wants to|is going to|is planning to|plans to|threatened to|said|told me)\b/i;
-  
+
   if (matchedPhrase) {
     const idx = lower.indexOf(matchedPhrase);
     if (idx !== -1) {
@@ -62,13 +62,54 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
   const tokens = lower.replace(/[^\w\s']/g, " ").split(/\s+/).filter(Boolean);
 
   // LEVEL 3 — PRIORITY SAFETY SIGNALS
+  const explicitLossOfLifePhrases = [
+    "don't want to live anymore",
+    "dont want to live anymore",
+    "do not want to live anymore",
+    "don't want to live",
+    "dont want to live",
+    "do not want to live",
+    "cannot live anymore",
+    "can't live anymore",
+    "cant live anymore",
+    "no reason to live anymore",
+    "no reason to live",
+    "better off dead"
+  ];
+
+  for (const phrase of explicitLossOfLifePhrases) {
+    if (lower.includes(phrase)) {
+      if (isThirdPersonOrQuoted(raw, phrase)) {
+        return {
+          level: 2,
+          emotion: "warning",
+          reason: `third_person_crisis_discussion: "${phrase}"`
+        };
+      }
+      return {
+        level: 3,
+        emotion: "danger",
+        reason: `urgent_safety_signal: "${phrase}"`
+      };
+    }
+  }
+
   const level3Phrases = [
     "want to kill myself",
+    "going to kill myself",
     "wants to kill himself",
     "wants to kill herself",
+    "wants to kill themselves",
     "going to end my life",
+    "want to end my life",
     "planning to suicide",
     "plan to suicide",
+    "thinking about suicide",
+    "thought about suicide",
+    "thoughts of suicide",
+    "suicide plan",
+    "have a plan to end my life",
+    "might hurt myself",
     "hurt myself right now",
     "plan to end my life",
     "act on these thoughts tonight",
@@ -79,6 +120,7 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     "immediate danger",
     "cannot keep myself safe",
     "can't keep myself safe",
+    "cant keep myself safe",
     "have the means with me",
     "breakup && die",
     "breakup and die",
@@ -91,11 +133,7 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     "wants to die",
     "slit my wrists",
     "hang myself",
-    "overdose to die",
-    "better off dead",
-    "no reason to live anymore",
-    "cant live anymore",
-    "can't live anymore"
+    "overdose to die"
   ];
 
   for (const phrase of level3Phrases) {
@@ -124,12 +162,54 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     }
   }
 
-  // LEVEL 2 — GUIDED SUPPORT SIGNALS
+  // LEVEL 2 — GUIDED SUPPORT / ELEVATED DISTRESS SIGNALS
   const level2Phrases = [
     "very stressed",
-    "overwhelmed with everything",
+    "am stressed",
+    "feel stressed",
+    "feeling stressed",
+    "so stressed",
+    "feel anxious",
+    "am anxious",
+    "feeling anxious",
+    "worried about my exams",
+    "worried about exams",
+    "exam stress",
+    "test anxiety",
     "can't stop overthinking",
     "cannot stop overthinking",
+    "stop overthinking",
+    "had a breakup",
+    "went through a breakup",
+    "breakup and i'm hurt",
+    "breakup and im hurt",
+    "heartbroken",
+    "feel sad",
+    "feeling sad",
+    "am sad",
+    "am frustrated",
+    "feel frustrated",
+    "feeling frustrated",
+    "feel overwhelmed",
+    "feeling overwhelmed",
+    "am overwhelmed",
+    "can't sleep because of tension",
+    "cannot sleep because of tension",
+    "can't sleep because of anxiety",
+    "cannot sleep because of anxiety",
+    "insomnia from stress",
+    "scared about my future",
+    "scared of my future",
+    "scared about the future",
+    "feel like crying",
+    "feels like crying",
+    "want to cry",
+    "crying a lot",
+    "everything feels too much",
+    "feels like too much",
+    "too much to handle",
+    "am angry with everyone",
+    "angry with everyone",
     "frequent panic feelings",
     "hopeless about my situation",
     "crying a lot lately",
@@ -137,14 +217,11 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     "feel worthless",
     "feeling worthless",
     "nobody understands me",
-    "can't sleep because of anxiety",
-    "cannot sleep because of anxiety",
     "under too much pressure",
     "giving up on my studies",
     "giving up on studies",
     "struggling to manage my emotions",
     "very low for several days",
-    "scared about what will happen next",
     "isolated and need support",
     "difficulty coping with my problems",
     "panic attack",
@@ -153,6 +230,8 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     "crying constantly",
     "feeling lonely",
     "feel lonely",
+    "am lonely",
+    "so lonely",
     "isolated",
     "can't cope anymore",
     "cannot cope anymore",
@@ -177,7 +256,10 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     }
   }
 
-  const highDistressTokens = ["hopeless", "worthless", "overwhelmed", "unbearable", "devastated", "lonely"];
+  const highDistressTokens = [
+    "hopeless", "worthless", "overwhelmed", "unbearable", "devastated",
+    "lonely", "anxious", "stressed", "heartbroken", "depressed", "frustrated"
+  ];
   for (const token of highDistressTokens) {
     const tokenIdx = tokens.indexOf(token);
     if (tokenIdx !== -1 && !isNegated(tokens, tokenIdx)) {
@@ -196,7 +278,6 @@ export function assessSupportLevel(text, clientEmotion = "calm") {
     return { level: 2, emotion: "warning", reason: "client_warning_flag" };
   }
 
-  // LEVEL 1 — CALM SUPPORT
   return {
     level: 1,
     emotion: "calm",

@@ -10,7 +10,6 @@ import {
   doc,
   query,
   where,
-  orderBy,
   onSnapshot,
   getDoc
 } from "firebase/firestore";
@@ -73,14 +72,12 @@ export const Chat = () => {
   const [showCameraNotice, setShowCameraNotice] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Voice Input (Auto-Send on final transcript)
-  const [voiceState, setVoiceState] = useState("idle");
+  // Voice Input (Transcription fills input for review; NO auto-send)
+  const [voiceState, setVoiceState] = useState("idle"); // 'idle' | 'listening' | 'error'
   const [sttSupported, setSttSupported] = useState(true);
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
-  const hasSubmittedVoiceRef = useRef(false);
   const accumulatedTranscriptRef = useRef("");
-  const silenceTimerRef = useRef(null);
 
   // Speech Synthesis (TTS) - Optional audio readout
   const [ttsEnabled, setTtsEnabled] = useState(false);
@@ -100,17 +97,17 @@ export const Chat = () => {
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
 
-  // Prompt camera consent immediately upon entering chat if not already handled in this session
+  // 1. Camera Consent Check on sign-in / entry (Only once per session unless manual toggle)
   useEffect(() => {
     if (currentUser) {
-      const cameraHandled = sessionStorage.getItem("calmchain_camera_prompted");
-      if (!cameraHandled) {
+      const consentDecided = sessionStorage.getItem("calmchain_camera_consent_decided");
+      if (!consentDecided) {
         setShowCameraNotice(true);
       }
     }
   }, [currentUser]);
 
-  // 1. Live Date & Time timer
+  // 2. Live Date & Time timer
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -129,7 +126,7 @@ export const Chat = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Initialize Socket.IO connection
+  // 3. Initialize Socket.IO connection
   useEffect(() => {
     const backendUrl =
       import.meta.env.VITE_API_URL ||
@@ -201,7 +198,7 @@ export const Chat = () => {
     };
   }, [currentChatId, currentUser, ttsEnabled]);
 
-  // 3. VOICE INPUT WITH AUTOMATIC SEND AFTER SPEAKING
+  // 4. VOICE INPUT (Speech Recognition fills input for user review; NO auto-send)
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -215,7 +212,6 @@ export const Chat = () => {
       recognition.onstart = () => {
         setVoiceState("listening");
         setVoiceError("");
-        hasSubmittedVoiceRef.current = false;
         accumulatedTranscriptRef.current = "";
       };
 
@@ -242,41 +238,19 @@ export const Chat = () => {
             (accumulatedTranscriptRef.current + " " + interimText).trim()
           );
         }
-
-        // Reset silence timer: when user pauses for 1.8 seconds after speaking, auto-stop
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = setTimeout(() => {
-          if (voiceState === "listening" && accumulatedTranscriptRef.current.trim()) {
-            recognition.stop();
-          }
-        }, 1800);
       };
 
       recognition.onerror = (event) => {
         console.warn("Speech recognition notice:", event.error);
-        if (event.error === "no-speech") {
-          setVoiceState("idle");
-        } else if (event.error === "not-allowed") {
-          setVoiceError("Microphone permission denied.");
-          setVoiceState("error");
-          setTimeout(() => setVoiceState("idle"), 3000);
-        } else {
-          setVoiceState("idle");
+        if (event.error === "not-allowed") {
+          setVoiceError("Microphone permission denied. You can continue typing normally.");
         }
+        setVoiceState("idle");
       };
 
       recognition.onend = () => {
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-
-        const textToSend = accumulatedTranscriptRef.current.trim();
-        if (textToSend && !hasSubmittedVoiceRef.current) {
-          hasSubmittedVoiceRef.current = true;
-          setVoiceState("sending");
-          // Automatically send the message without requiring Send click
-          handleSendVoiceMessage(textToSend);
-        } else {
-          setVoiceState("idle");
-        }
+        // Recognition completed — user reviews and explicitly sends
+        setVoiceState("idle");
       };
 
       recognitionRef.current = recognition;
@@ -285,21 +259,20 @@ export const Chat = () => {
     }
 
     return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
     };
-  }, [currentChatId, currentUser]);
+  }, []);
 
-  const startVoiceInput = () => {
+  const toggleVoiceInput = () => {
     if (!recognitionRef.current) return;
     if (voiceState === "listening") {
       recognitionRef.current.stop();
+      setVoiceState("idle");
     } else {
       try {
-        hasSubmittedVoiceRef.current = false;
-        accumulatedTranscriptRef.current = "";
+        accumulatedTranscriptRef.current = newMessage.trim();
         recognitionRef.current.start();
       } catch (err) {
         console.warn("Recognition start issue:", err);
@@ -307,69 +280,7 @@ export const Chat = () => {
     }
   };
 
-  const cancelVoiceInput = () => {
-    if (recognitionRef.current) {
-      hasSubmittedVoiceRef.current = true; // prevent auto-send
-      recognitionRef.current.abort();
-    }
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    accumulatedTranscriptRef.current = "";
-    setNewMessage("");
-    setVoiceState("idle");
-  };
-
-  // Helper function to auto-send the recognized speech transcript
-  const handleSendVoiceMessage = async (transcriptText) => {
-    if (!transcriptText || !currentChatId || !currentUser) {
-      setVoiceState("idle");
-      return;
-    }
-
-    // Automatically assess support level using centralized classifier
-    const assessed = assessSupportLevel(transcriptText);
-    setSupportLevel(assessed.level);
-    if (assessed.level === 3) setShowEmergency(true);
-
-    const userMsgObj = {
-      id: `user_${Date.now()}`,
-      text: transcriptText,
-      sender: "user",
-      emotion: assessed.emotion,
-      level: assessed.level,
-      timestamp: new Date().toISOString()
-    };
-
-    const updated = [...messages, userMsgObj];
-    setMessages(updated);
-    setNewMessage("");
-    setIsAiReplying(true);
-    setVoiceState("idle");
-
-    const isFirstUserMsg = !messages.some((m) => m.sender === "user");
-    const autoTitle = isFirstUserMsg
-      ? transcriptText.length > 30
-        ? `${transcriptText.slice(0, 30)}...`
-        : transcriptText
-      : null;
-
-    try {
-      const chatDocRef = doc(db, "chats", currentChatId);
-      const updatePayload = {
-        messages: updated,
-        updatedAt: new Date().toISOString(),
-        supportLevel: assessed.level
-      };
-      if (autoTitle) updatePayload.title = autoTitle;
-      await updateDoc(chatDocRef, updatePayload);
-    } catch (err) {
-      console.error("Error updating Firestore on voice send:", err);
-    }
-
-    // Emit to AI
-    dispatchAiRequest(transcriptText, assessed, updated);
-  };
-
-  // 4. Speech Synthesis (Read aloud)
+  // 5. Speech Synthesis (Read aloud)
   const speakReply = (text) => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -389,7 +300,7 @@ export const Chat = () => {
     }
   };
 
-  // 5. Load Face-API models lazily
+  // 6. Face-API lazy loading
   useEffect(() => {
     let isMounted = true;
     const loadModels = async () => {
@@ -409,7 +320,7 @@ export const Chat = () => {
     };
   }, []);
 
-  // 6. Camera controls (Explicit, Optional, Private)
+  // 7. Camera controls (Explicit, Optional, Private, 100% On-Device)
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -441,13 +352,13 @@ export const Chat = () => {
   };
 
   const handleAllowCamera = () => {
-    sessionStorage.setItem("calmchain_camera_prompted", "true");
+    sessionStorage.setItem("calmchain_camera_consent_decided", "allowed");
     setShowCameraNotice(false);
     startCamera();
   };
 
   const handleDismissCamera = () => {
-    sessionStorage.setItem("calmchain_camera_prompted", "true");
+    sessionStorage.setItem("calmchain_camera_consent_decided", "dismissed");
     setShowCameraNotice(false);
   };
 
@@ -484,15 +395,15 @@ export const Chat = () => {
     };
   }, []);
 
-  // 7. Load User's Chat List from Firestore
+  // 8. Load User's Chat List from Firestore (Safe query without requiring composite index)
   useEffect(() => {
     if (!currentUser?.uid) return;
     setLoadingChats(true);
 
+    // Query by userId only to avoid Firestore composite index requirement
     const q = query(
       collection(db, "chats"),
-      where("userId", "==", currentUser.uid),
-      orderBy("createdAt", "desc")
+      where("userId", "==", currentUser.uid)
     );
 
     const unsubscribe = onSnapshot(
@@ -503,9 +414,17 @@ export const Chat = () => {
           ...d.data()
         }));
 
+        // Robust client-side sorting by creation/update timestamp
+        list.sort((a, b) => {
+          const timeA = new Date(b.createdAt || b.updatedAt || 0).getTime();
+          const timeB = new Date(a.createdAt || a.updatedAt || 0).getTime();
+          return timeA - timeB;
+        });
+
         setChats(list);
         setLoadingChats(false);
 
+        // Select the most recent chat if none currently selected
         if (list.length > 0 && !currentChatId) {
           setCurrentChatId(list[0].id);
         } else if (list.length === 0 && !currentChatId) {
@@ -521,7 +440,7 @@ export const Chat = () => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 8. Load Current Chat Messages
+  // 9. Load Current Chat Messages
   useEffect(() => {
     if (!currentChatId) return;
     setLoadingMessages(true);
@@ -560,7 +479,7 @@ export const Chat = () => {
     return () => unsubscribe();
   }, [currentChatId]);
 
-  // 9. Create a Genuinely New Chat with Automatic First Welcome Message
+  // 10. Create a Genuinely New Chat with Automatic Welcome Message
   const createNewChat = async () => {
     if (!currentUser) return;
     try {
@@ -672,12 +591,13 @@ export const Chat = () => {
     }
   };
 
-  // 10. Manual Send Message (Typed text)
+  // 11. Explicit Send Message (Typed or Spoken)
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     const trimmed = newMessage.trim();
     if (!trimmed || !currentChatId || !currentUser) return;
 
+    // Assess support level using centralized classifier
     const assessed = assessSupportLevel(trimmed);
     setSupportLevel(assessed.level);
     if (assessed.level === 3) setShowEmergency(true);
@@ -696,10 +616,11 @@ export const Chat = () => {
     setNewMessage("");
     setIsAiReplying(true);
 
+    // Generate descriptive title from first user message if applicable
     const isFirstUserMsg = !messages.some((m) => m.sender === "user");
     const autoTitle = isFirstUserMsg
-      ? trimmed.length > 30
-        ? `${trimmed.slice(0, 30)}...`
+      ? trimmed.length > 28
+        ? `${trimmed.slice(0, 28)}...`
         : trimmed
       : null;
 
@@ -719,7 +640,7 @@ export const Chat = () => {
     dispatchAiRequest(trimmed, assessed, updated);
   };
 
-  // 11. Edit Message
+  // 12. Edit Message
   const handleEditMessage = async (msgId) => {
     if (!editText.trim() || !currentChatId) return;
     const updatedMessages = messages.map((m) => {
@@ -767,7 +688,7 @@ export const Chat = () => {
 
   return (
     <div className={`flex h-screen w-full ${theme.pageBg} ${theme.textPrimary} font-['Inter'] relative overflow-hidden select-none transition-colors duration-500`}>
-      {/* Ambient Theme Lighting Halos */}
+      {/* Dynamic Ambient Theme Mesh Orbs */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
         <div
           className={`absolute -top-[15%] -left-[10%] w-[55%] h-[55%] blur-[140px] rounded-full transition-colors duration-700 ${theme.orb1}`}
@@ -785,7 +706,7 @@ export const Chat = () => {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar (Fully themed per active support level) */}
       <aside
         className={`fixed md:static inset-y-0 left-0 z-50 w-72 ${theme.sidebarBg} backdrop-blur-2xl border-r ${theme.border} flex flex-col shadow-2xl transition-all duration-300 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
@@ -796,13 +717,13 @@ export const Chat = () => {
           <div className="flex items-center gap-3">
             <img src="/calmchain-logo.svg" alt="CalmChain Logo" className="w-9 h-9 drop-shadow-md" />
             <div>
-              <h1 className="text-xl font-black font-['Outfit'] tracking-tight text-white">CalmChain</h1>
-              <p className={`text-[11px] font-bold ${theme.textSecondary}`}>{theme.name}</p>
+              <h1 className="text-xl font-black font-['Outfit'] tracking-tight">CalmChain</h1>
+              <p className={`text-[11px] font-bold ${theme.textMuted}`}>{theme.name}</p>
             </div>
           </div>
           <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="md:hidden p-1 text-slate-400 hover:text-white"
+            className="md:hidden p-1 opacity-70 hover:opacity-100"
           >
             <X size={20} />
           </button>
@@ -818,16 +739,16 @@ export const Chat = () => {
           </button>
         </div>
 
-        {/* Conversation History List grouped by Date */}
+        {/* Previous Chat History List grouped by Date */}
         <div className="flex-1 overflow-y-auto px-3 space-y-4 text-xs">
           {loadingChats ? (
             <div className="space-y-2 p-2">
-              <div className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
-              <div className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
-              <div className="h-10 bg-slate-800/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-black/20 rounded-xl animate-pulse" />
+              <div className="h-10 bg-black/20 rounded-xl animate-pulse" />
+              <div className="h-10 bg-black/20 rounded-xl animate-pulse" />
             </div>
           ) : chats.length === 0 ? (
-            <div className="text-center py-10 text-slate-400 text-xs">
+            <div className={`text-center py-10 ${theme.textMuted} text-xs`}>
               No conversations yet. Tap "New Conversation" to start.
             </div>
           ) : (
@@ -863,7 +784,7 @@ export const Chat = () => {
           )}
         </div>
 
-        {/* Sidebar Tools Navigation */}
+        {/* Sidebar Grounding Tools Navigation */}
         <div className={`p-3 border-t ${theme.border} space-y-1 text-xs font-semibold`}>
           <button
             onClick={() => setShowBreathing(true)}
@@ -879,16 +800,16 @@ export const Chat = () => {
           </button>
           <button
             onClick={() => setShowEmergency(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer text-rose-400 hover:bg-rose-950/40 hover:text-rose-300"
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer text-rose-300 hover:bg-rose-950/40 hover:text-rose-200"
           >
             <PhoneCall size={16} /> Emergency Helplines
           </button>
         </div>
 
         {/* User Info & Logout */}
-        <div className={`p-4 border-t ${theme.border} flex items-center justify-between bg-[#0B1120]/60`}>
+        <div className={`p-4 border-t ${theme.border} flex items-center justify-between bg-black/20`}>
           <div className="truncate pr-2">
-            <p className="text-xs font-bold text-slate-200 truncate">
+            <p className="text-xs font-bold truncate">
               {currentUser?.email || "User"}
             </p>
             <p className={`text-[10px] font-medium ${theme.textMuted}`}>Sanctuary Member</p>
@@ -896,7 +817,7 @@ export const Chat = () => {
           <button
             onClick={handleLogout}
             title="Sign Out"
-            className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition cursor-pointer"
+            className="p-2 rounded-xl text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition cursor-pointer"
           >
             <LogOut size={16} />
           </button>
@@ -910,12 +831,12 @@ export const Chat = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className="md:hidden p-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700"
+              className="md:hidden p-2 rounded-xl bg-black/20 border border-white/10 hover:bg-black/30"
             >
               <Menu size={18} />
             </button>
 
-            {/* Active Support Level Badge with Immediate Interactive Controls */}
+            {/* Active Support Level Indicator */}
             <div className="flex items-center gap-2">
               <span
                 className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 border ${theme.badge} shadow-xs`}
@@ -935,7 +856,7 @@ export const Chat = () => {
               {supportLevel === 3 && (
                 <button
                   onClick={() => setShowEmergency(true)}
-                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black transition flex items-center gap-1 shadow-sm"
+                  className="px-2.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black transition flex items-center gap-1 shadow-sm cursor-pointer"
                 >
                   <PhoneCall size={12} /> Call 14416
                 </button>
@@ -946,8 +867,8 @@ export const Chat = () => {
           {/* Right Header Controls (Live Clock, TTS Audio, Camera) */}
           <div className="flex items-center gap-2.5">
             {liveClock && (
-              <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
-                <Clock size={13} className="text-teal-400" />
+              <div className={`hidden lg:flex items-center gap-1.5 text-xs ${theme.textSecondary} bg-black/20 px-3 py-1.5 rounded-xl border ${theme.border}`}>
+                <Clock size={13} />
                 <span>{liveClock}</span>
               </div>
             )}
@@ -965,11 +886,11 @@ export const Chat = () => {
               className={`p-2 rounded-xl border transition cursor-pointer ${
                 ttsEnabled
                   ? theme.badge
-                  : "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200"
+                  : "bg-black/20 text-slate-300 border-white/10 hover:text-white"
               }`}
             >
               {isSpeaking ? (
-                <Volume2 size={16} className="animate-pulse text-emerald-400" />
+                <Volume2 size={16} className="animate-pulse text-emerald-300" />
               ) : ttsEnabled ? (
                 <Volume2 size={16} />
               ) : (
@@ -981,7 +902,7 @@ export const Chat = () => {
             <div className="relative flex items-center">
               {cameraActive ? (
                 <div className="flex items-center gap-2">
-                  <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-500 shadow-sm bg-black">
+                  <div className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-400 shadow-sm bg-black">
                     <video
                       ref={videoRef}
                       autoPlay
@@ -993,7 +914,7 @@ export const Chat = () => {
                   <button
                     onClick={stopCamera}
                     title="Turn Off Camera"
-                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-400 border border-slate-700 transition cursor-pointer"
+                    className="p-1.5 rounded-xl bg-black/30 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-white/10 transition cursor-pointer"
                   >
                     <VideoOff size={16} />
                   </button>
@@ -1005,8 +926,8 @@ export const Chat = () => {
                       startCamera();
                     }
                   }}
-                  title="Enable Facial Mirror (Optional & Local)"
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
+                  title="Enable Facial Emotion Mirror (100% Local & Private)"
+                  className="p-2 rounded-xl bg-black/20 hover:bg-black/30 text-slate-300 hover:text-white border border-white/10 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs"
                 >
                   <Video size={16} />
                   <span className="hidden sm:inline">Camera</span>
@@ -1018,12 +939,12 @@ export const Chat = () => {
 
         {/* Detected Expression Notification (Subtle Local Mirror Banner) */}
         {cameraActive && detectedExpression && (
-          <div className={`px-6 py-1.5 bg-[#0F172A]/90 border-b ${theme.border} text-slate-300 text-xs flex items-center justify-between`}>
+          <div className={`px-6 py-1.5 bg-black/25 border-b ${theme.border} ${theme.textSecondary} text-xs flex items-center justify-between`}>
             <span className="flex items-center gap-2">
               <span>🪞 Facial Mirror (Local only):</span>
-              <strong className="capitalize text-emerald-400">{detectedExpression}</strong>
+              <strong className="capitalize text-emerald-300">{detectedExpression}</strong>
             </span>
-            <span className="text-[10px] text-slate-500">Zero cloud upload</span>
+            <span className="text-[10px] opacity-70">Zero cloud upload</span>
           </div>
         )}
 
@@ -1032,11 +953,11 @@ export const Chat = () => {
           <div className="max-w-3xl mx-auto flex flex-col gap-4">
             {loadingMessages ? (
               <div className="space-y-4 py-8">
-                <div className="w-2/3 h-14 bg-slate-800/60 rounded-2xl animate-pulse" />
-                <div className="w-1/2 h-14 bg-slate-800/60 rounded-2xl ml-auto animate-pulse" />
+                <div className="w-2/3 h-14 bg-black/20 rounded-2xl animate-pulse" />
+                <div className="w-1/2 h-14 bg-black/20 rounded-2xl ml-auto animate-pulse" />
               </div>
             ) : messages.length === 0 ? (
-              <div className="text-center py-16 text-slate-400 text-sm">
+              <div className={`text-center py-16 ${theme.textMuted} text-sm`}>
                 Starting your calm space...
               </div>
             ) : (
@@ -1058,19 +979,19 @@ export const Chat = () => {
                         type="text"
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
-                        className="w-full bg-slate-900 text-slate-100 px-3 py-2 rounded-xl text-sm border border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
+                        className={`w-full ${theme.input} px-3 py-2 rounded-xl text-sm outline-none`}
                         autoFocus
                       />
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => setEditingMsgId(null)}
-                          className="px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200"
+                          className="px-2.5 py-1 text-xs opacity-70 hover:opacity-100"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={() => handleEditMessage(msg.id)}
-                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1"
+                          className={`px-3 py-1 ${theme.accentButton} rounded-lg text-xs font-bold flex items-center gap-1`}
                         >
                           <Check size={13} /> Save
                         </button>
@@ -1082,7 +1003,7 @@ export const Chat = () => {
                         {msg.text}
                       </p>
 
-                      <div className="flex items-center justify-between gap-3 mt-2 text-[10px] opacity-70">
+                      <div className="flex items-center justify-between gap-3 mt-2 text-[10px] opacity-75">
                         <span>{formatMessageTime(msg.timestamp)}</span>
                         {msg.edited && <span>(edited)</span>}
                         {msg.sender === "user" && (
@@ -1106,7 +1027,7 @@ export const Chat = () => {
 
             {isAiReplying && (
               <div className={`self-start p-4 rounded-3xl ${theme.cardBg} border ${theme.border} flex items-center gap-2 text-xs ${theme.textSecondary}`}>
-                <Sparkles size={14} className="animate-pulse text-emerald-400" />
+                <Sparkles size={14} className="animate-pulse" />
                 <span>CalmChain is reflecting...</span>
               </div>
             )}
@@ -1115,22 +1036,23 @@ export const Chat = () => {
           </div>
         </div>
 
-        {/* Voice Input State Notification Banner */}
-        {voiceState !== "idle" && (
-          <div className="px-6 py-2 bg-[#0F172A] border-t border-slate-800 text-xs flex items-center justify-between z-20 shadow-sm text-slate-200">
+        {/* Voice Input Listening Status Notice */}
+        {voiceState === "listening" && (
+          <div className="px-6 py-2 bg-black/40 border-t border-white/10 text-xs flex items-center justify-between z-20 shadow-sm">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-              <span className="font-bold">
-                {voiceState === "listening" && "Listening... speak now, will send automatically when you finish"}
-                {voiceState === "processing" && "Processing speech..."}
-                {voiceState === "sending" && "Submitting your message to chat..."}
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="font-bold text-emerald-200">
+                Listening to your voice... Speak now. Speech will appear below for you to review before sending.
               </span>
             </div>
             <button
-              onClick={cancelVoiceInput}
-              className="text-slate-400 hover:text-rose-400 font-bold text-[11px] underline cursor-pointer"
+              onClick={() => {
+                if (recognitionRef.current) recognitionRef.current.stop();
+                setVoiceState("idle");
+              }}
+              className="text-slate-300 hover:text-white font-bold text-[11px] underline cursor-pointer"
             >
-              Cancel Voice
+              Done Speaking
             </button>
           </div>
         )}
@@ -1147,19 +1069,20 @@ export const Chat = () => {
             onSubmit={handleSendMessage}
             className="max-w-3xl mx-auto relative flex items-center gap-2"
           >
-            {/* Automatic Voice Input Button */}
+            {/* Voice Input Microphone Button */}
             {sttSupported && (
               <button
                 type="button"
-                onClick={startVoiceInput}
+                onClick={toggleVoiceInput}
                 title={
                   voiceState === "listening"
-                    ? "Listening... Tap to finish or pause"
-                    : "Voice Input (Auto-sends upon finish)"
+                    ? "Listening... Tap to finish recording"
+                    : "Tap to dictate message (fills text box for your review)"
                 }
                 className={`p-3 rounded-2xl border transition cursor-pointer shrink-0 ${
                   voiceState === "listening" ? theme.micActive : theme.micButton
                 }`}
+                aria-label="Toggle voice input"
               >
                 <Mic size={20} />
               </button>
@@ -1172,17 +1095,17 @@ export const Chat = () => {
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder={
                 voiceState === "listening"
-                  ? "Listening to your voice (will auto-send when you finish)..."
-                  : "Type what's on your mind or tap mic..."
+                  ? "Listening to speech (edit or review before sending)..."
+                  : "Type what's on your mind or tap the mic..."
               }
               className={`w-full rounded-2xl px-5 py-3.5 text-sm sm:text-base outline-none border transition shadow-inner font-normal ${theme.input}`}
             />
 
-            {/* Manual Send Button */}
+            {/* Manual Send Button with explicit visibility & contrast */}
             <button
               type="submit"
               disabled={!newMessage.trim()}
-              className={`p-3.5 rounded-2xl disabled:opacity-30 transition shadow-md active:scale-95 cursor-pointer shrink-0 ${theme.sendButton}`}
+              className={`p-3.5 rounded-2xl transition shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${theme.sendButton}`}
               aria-label="Send message"
             >
               <Send size={18} />
@@ -1190,7 +1113,7 @@ export const Chat = () => {
           </form>
 
           <div className={`max-w-3xl mx-auto mt-2 flex items-center justify-between text-[11px] ${theme.textMuted} px-2`}>
-            <span>Confidential AI companion • Voice auto-sends when speech ends</span>
+            <span>Confidential AI companion • Review speech before sending</span>
             {supportLevel === 2 && (
               <span className="font-semibold text-amber-300">
                 Peer Support Desk: Mon-Sat 9AM-8PM IST
@@ -1200,50 +1123,50 @@ export const Chat = () => {
         </footer>
       </main>
 
-      {/* Camera Permission & Emotion Consent Modal (Immediate on sign-in & on demand) */}
+      {/* Camera Consent Modal (Immediate on sign-in / entry if not decided) */}
       <AnimatePresence>
         {showCameraNotice && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4"
             onClick={handleDismissCamera}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="w-full max-w-md bg-[#0F172A] border border-slate-800 rounded-3xl p-6 sm:p-8 text-slate-100 text-center shadow-2xl relative"
+              className={`w-full max-w-md ${theme.cardBg} border ${theme.border} rounded-3xl p-6 sm:p-8 text-center shadow-2xl relative`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-14 h-14 rounded-2xl bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-900/50 border border-emerald-500/40 text-emerald-300 flex items-center justify-center mx-auto mb-4">
                 <Video size={28} />
               </div>
-              <h2 className="text-xl font-bold font-['Outfit'] mb-2 text-white">
-                Enable Emotion Detection?
+              <h2 className="text-xl font-bold font-['Outfit'] mb-2">
+                Would you like to enable camera-based support?
               </h2>
-              <p className="text-xs text-slate-300 leading-relaxed mb-4">
-                CalmChain can estimate your facial sentiment in real time to adapt wellness support and comfort levels.
+              <p className={`text-xs ${theme.textSecondary} leading-relaxed mb-4`}>
+                CalmChain can optionally estimate your facial sentiment in real time to adjust emotional support and comforting grounding tools.
               </p>
-              <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-left mb-6 space-y-1.5">
-                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-                  <Sparkles size={14} /> 100% On-Device Processing
+              <div className="p-3.5 rounded-2xl bg-black/30 border border-white/10 text-left mb-6 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300">
+                  <Sparkles size={14} /> 100% Private & Local
                 </div>
-                <p className="text-[11px] text-slate-400 leading-normal">
-                  All face emotion detection runs locally in your browser via Face-API. Zero video feeds or biometric data are recorded, stored, or sent to any server.
+                <p className="text-[11px] opacity-80 leading-normal">
+                  All face emotion detection runs locally on your device via Face-API. Zero video feeds or biometrics are ever recorded, stored, or uploaded. Never used as a diagnosis.
                 </p>
               </div>
               <div className="flex gap-3">
                 <button
                   onClick={handleDismissCamera}
-                  className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+                  className="flex-1 py-3 rounded-xl bg-black/30 hover:bg-black/50 text-slate-300 text-xs font-bold transition cursor-pointer border border-white/10"
                 >
                   Not Now
                 </button>
                 <button
                   onClick={handleAllowCamera}
-                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-lg shadow-emerald-950/40 transition cursor-pointer"
+                  className={`flex-1 py-3 rounded-xl ${theme.accentButton} text-xs font-black shadow-md transition cursor-pointer`}
                 >
                   Allow Camera
                 </button>
@@ -1253,7 +1176,7 @@ export const Chat = () => {
         )}
       </AnimatePresence>
 
-      {/* Modals */}
+      {/* Grounding & Safety Modals */}
       <EmergencyModal isOpen={showEmergency} onClose={() => setShowEmergency(false)} />
       <BreathingExerciseModal isOpen={showBreathing} onClose={() => setShowBreathing(false)} />
       <MoodTrackerModal

@@ -8,84 +8,84 @@ export const THEME_CONFIGS = {
     name: "Calm Support",
     label: "Level 1 — Calm Support",
     themeClass: "theme-calm",
-    pageBg: "bg-[#0B1120]", // Dark navy blue foundation
-    sidebarBg: "bg-[#0F172A]/95 border-slate-800",
-    headerBg: "bg-[#0F172A]/90 border-slate-800",
-    cardBg: "bg-[#1E293B]/70 border-slate-800 shadow-md",
-    textPrimary: "text-slate-100",
-    textSecondary: "text-slate-300",
-    textMuted: "text-slate-400",
-    border: "border-slate-800",
+    pageBg: "bg-[#061A14]", // Predominantly dark forest/emerald green
+    sidebarBg: "bg-[#09261E]/95 border-emerald-900/60",
+    headerBg: "bg-[#09261E]/90 border-emerald-900/60",
+    cardBg: "bg-[#0E352B]/80 border-emerald-800/60 shadow-lg shadow-emerald-950/40",
+    textPrimary: "text-emerald-50",
+    textSecondary: "text-emerald-200/90",
+    textMuted: "text-emerald-400/80",
+    border: "border-emerald-800/60",
     accent: "emerald",
-    accentButton: "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40",
-    accentSecondaryButton: "bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30",
-    activeItem: "bg-emerald-950/50 text-emerald-300 font-semibold border-emerald-500/40",
-    inactiveItem: "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
-    badge: "bg-emerald-950/60 text-emerald-300 border-emerald-500/30",
-    userBubble: "bg-emerald-700 text-white border-emerald-600 shadow-md",
-    aiBubble: "bg-[#1E293B] text-slate-100 border-slate-700/80 shadow-md",
-    input: "bg-[#1E293B]/80 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-emerald-500 focus:ring-emerald-500/20",
-    micButton: "bg-slate-800 text-emerald-400 border-slate-700 hover:bg-slate-700",
-    micActive: "bg-emerald-600 text-white border-emerald-400 animate-pulse",
-    sendButton: "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40",
-    orb1: "bg-emerald-600/10",
-    orb2: "bg-teal-500/10"
+    accentButton: "bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold shadow-md shadow-emerald-950/40",
+    accentSecondaryButton: "bg-[#0A261E] hover:bg-[#0E382C] text-emerald-300 border border-emerald-700/60",
+    activeItem: "bg-emerald-800/60 text-emerald-100 font-semibold border-emerald-500/60 shadow-xs",
+    inactiveItem: "text-emerald-300/80 hover:bg-emerald-900/40 hover:text-emerald-100",
+    badge: "bg-emerald-900/80 text-emerald-300 border-emerald-600/60",
+    userBubble: "bg-emerald-600 text-white border-emerald-500 shadow-sm",
+    aiBubble: "bg-[#0D3328] text-emerald-50 border-emerald-800/80 shadow-sm",
+    input: "bg-[#09261E] border-emerald-700/80 text-emerald-50 placeholder-emerald-400/60 focus:border-emerald-400 focus:ring-emerald-400/20",
+    micButton: "bg-emerald-950/80 text-emerald-300 border-emerald-700/80 hover:bg-emerald-900/80 hover:text-emerald-100",
+    micActive: "bg-emerald-500 text-slate-950 border-emerald-300 animate-pulse font-bold",
+    sendButton: "bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold shadow-emerald-950/40",
+    orb1: "bg-emerald-500/20",
+    orb2: "bg-teal-500/20"
   },
   2: {
     level: 2,
-    name: "Guided Support",
-    label: "Level 2 — Guided Support",
+    name: "Elevated Support",
+    label: "Level 2 — Elevated Support",
     themeClass: "theme-guided",
-    pageBg: "bg-[#0B1120]", // Dark navy blue foundation
-    sidebarBg: "bg-[#0F172A]/95 border-slate-800",
-    headerBg: "bg-[#0F172A]/90 border-slate-800",
-    cardBg: "bg-[#1E293B]/70 border-slate-800 shadow-md",
-    textPrimary: "text-slate-100",
-    textSecondary: "text-slate-300",
-    textMuted: "text-slate-400",
-    border: "border-slate-800",
+    pageBg: "bg-[#191304]", // Predominantly warm amber/golden yellow
+    sidebarBg: "bg-[#241B07]/95 border-amber-900/60",
+    headerBg: "bg-[#241B07]/90 border-amber-900/60",
+    cardBg: "bg-[#33260A]/80 border-amber-800/60 shadow-lg shadow-amber-950/40",
+    textPrimary: "text-amber-50",
+    textSecondary: "text-amber-200/90",
+    textMuted: "text-amber-400/80",
+    border: "border-amber-800/60",
     accent: "amber",
-    accentButton: "bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-950/40",
-    accentSecondaryButton: "bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30",
-    activeItem: "bg-amber-950/50 text-amber-300 font-semibold border-amber-500/40",
-    inactiveItem: "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
-    badge: "bg-amber-950/60 text-amber-300 border-amber-500/30",
-    userBubble: "bg-amber-500 text-slate-950 font-medium border-amber-400 shadow-md",
-    aiBubble: "bg-[#1E293B] text-slate-100 border-slate-700/80 shadow-md",
-    input: "bg-[#1E293B]/80 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-500 focus:ring-amber-500/20",
-    micButton: "bg-slate-800 text-amber-400 border-slate-700 hover:bg-slate-700",
-    micActive: "bg-amber-500 text-slate-950 border-amber-400 animate-pulse font-bold",
-    sendButton: "bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-950/40 font-bold",
-    orb1: "bg-amber-600/10",
-    orb2: "bg-yellow-600/10"
+    accentButton: "bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-md shadow-amber-950/40",
+    accentSecondaryButton: "bg-[#261B05] hover:bg-[#382808] text-amber-300 border border-amber-700/60",
+    activeItem: "bg-amber-800/60 text-amber-100 font-semibold border-amber-500/60 shadow-xs",
+    inactiveItem: "text-amber-300/80 hover:bg-amber-900/40 hover:text-amber-100",
+    badge: "bg-amber-900/80 text-amber-300 border-amber-600/60",
+    userBubble: "bg-amber-500 text-slate-950 font-medium border-amber-400 shadow-sm",
+    aiBubble: "bg-[#302308] text-amber-50 border-amber-800/80 shadow-sm",
+    input: "bg-[#241B07] border-amber-700/80 text-amber-50 placeholder-amber-400/60 focus:border-amber-400 focus:ring-amber-400/20",
+    micButton: "bg-amber-950/80 text-amber-300 border-amber-700/80 hover:bg-amber-900/80 hover:text-amber-100",
+    micActive: "bg-amber-500 text-slate-950 border-amber-300 animate-pulse font-bold",
+    sendButton: "bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-amber-950/40",
+    orb1: "bg-amber-500/20",
+    orb2: "bg-yellow-500/20"
   },
   3: {
     level: 3,
     name: "Priority Support",
     label: "Level 3 — Priority Support",
     themeClass: "theme-priority",
-    pageBg: "bg-[#0B1120]", // Dark navy blue foundation
-    sidebarBg: "bg-[#0F172A]/95 border-slate-800",
-    headerBg: "bg-[#0F172A]/90 border-slate-800",
-    cardBg: "bg-[#1E293B]/70 border-slate-800 shadow-md",
-    textPrimary: "text-slate-100",
-    textSecondary: "text-slate-300",
-    textMuted: "text-slate-400",
-    border: "border-slate-800",
+    pageBg: "bg-[#180509]", // Predominantly deep crimson/coral red
+    sidebarBg: "bg-[#26090E]/95 border-rose-900/60",
+    headerBg: "bg-[#26090E]/90 border-rose-900/60",
+    cardBg: "bg-[#360C14]/80 border-rose-800/60 shadow-lg shadow-rose-950/40",
+    textPrimary: "text-rose-50",
+    textSecondary: "text-rose-200/90",
+    textMuted: "text-rose-400/80",
+    border: "border-rose-800/60",
     accent: "rose",
-    accentButton: "bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/40",
-    accentSecondaryButton: "bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30",
-    activeItem: "bg-rose-950/50 text-rose-300 font-semibold border-rose-500/40",
-    inactiveItem: "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
-    badge: "bg-rose-950/60 text-rose-300 border-rose-500/40",
-    userBubble: "bg-rose-600 text-white border-rose-500 shadow-md",
-    aiBubble: "bg-[#1E293B] text-slate-100 border-slate-700/80 shadow-md",
-    input: "bg-[#1E293B]/80 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-rose-500 focus:ring-rose-500/20",
-    micButton: "bg-slate-800 text-rose-400 border-slate-700 hover:bg-slate-700",
-    micActive: "bg-rose-600 text-white border-rose-500 animate-pulse",
-    sendButton: "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/40",
-    orb1: "bg-rose-600/10",
-    orb2: "bg-red-600/10"
+    accentButton: "bg-rose-600 hover:bg-rose-500 text-white font-bold shadow-md shadow-rose-950/40",
+    accentSecondaryButton: "bg-[#28080E] hover:bg-[#3D0C16] text-rose-300 border border-rose-700/60",
+    activeItem: "bg-rose-800/60 text-rose-100 font-semibold border-rose-500/60 shadow-xs",
+    inactiveItem: "text-rose-300/80 hover:bg-rose-900/40 hover:text-rose-100",
+    badge: "bg-rose-900/80 text-rose-300 border-rose-600/60",
+    userBubble: "bg-rose-600 text-white border-rose-500 shadow-sm",
+    aiBubble: "bg-[#330B12] text-rose-50 border-rose-800/80 shadow-sm",
+    input: "bg-[#26090E] border-rose-700/80 text-rose-50 placeholder-rose-400/60 focus:border-rose-400 focus:ring-rose-400/20",
+    micButton: "bg-rose-950/80 text-rose-300 border-rose-700/80 hover:bg-rose-900/80 hover:text-rose-100",
+    micActive: "bg-rose-600 text-white border-rose-400 animate-pulse font-bold",
+    sendButton: "bg-rose-600 hover:bg-rose-500 text-white font-bold shadow-rose-950/40",
+    orb1: "bg-rose-500/20",
+    orb2: "bg-red-500/20"
   }
 };
 
@@ -100,16 +100,12 @@ export const ThemeProvider = ({ children }) => {
   const theme = THEME_CONFIGS[supportLevel] || THEME_CONFIGS[1];
 
   useEffect(() => {
-    // Update data-theme on documentElement for CSS styling
     document.documentElement.setAttribute("data-theme", `level-${supportLevel}`);
-    document.body.className = "bg-[#0B1120] text-slate-100 antialiased";
   }, [supportLevel]);
 
   return (
     <ThemeContext.Provider value={{ supportLevel, setSupportLevel, theme }}>
-      <div className="min-h-screen bg-[#0B1120] text-slate-100">
-        {children}
-      </div>
+      {children}
     </ThemeContext.Provider>
   );
 };

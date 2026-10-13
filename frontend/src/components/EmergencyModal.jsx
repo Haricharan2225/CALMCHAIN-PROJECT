@@ -9,7 +9,7 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
           onClick={onClose}
         >
           <motion.div
@@ -17,7 +17,7 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="bg-[#0F172A] border-2 border-rose-500/60 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative text-slate-100 overflow-hidden"
+            className="bg-[#26090E] border-2 border-rose-500/70 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative text-rose-50 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Accent Bar */}
@@ -25,13 +25,13 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
 
             <button
               onClick={onClose}
-              className="absolute top-5 right-5 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              className="absolute top-5 right-5 p-2 rounded-xl bg-black/30 hover:bg-black/50 text-rose-300 hover:text-white transition cursor-pointer border border-white/10"
               aria-label="Close safety modal"
             >
               <X size={20} />
             </button>
 
-            <div className="flex items-center gap-3 mb-4 text-rose-400">
+            <div className="flex items-center gap-3 mb-4 text-rose-300">
               <div className="w-12 h-12 rounded-2xl bg-rose-950/80 border border-rose-500/40 flex items-center justify-center shrink-0">
                 <ShieldAlert size={26} className="text-rose-400" />
               </div>
@@ -39,13 +39,13 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
                 <h2 className="text-xl sm:text-2xl font-black font-['Outfit'] text-white">
                   You Are Not Alone 💙
                 </h2>
-                <p className="text-xs text-rose-400 font-bold tracking-wide">
+                <p className="text-xs text-rose-300 font-bold tracking-wide">
                   Level 3 Priority Safety & Immediate Support
                 </p>
               </div>
             </div>
 
-            <p className="text-sm text-slate-300 leading-relaxed mb-6">
+            <p className="text-sm text-rose-100/90 leading-relaxed mb-6">
               If you are feeling overwhelmed or having thoughts of self-harm, please connect with someone who can help right now. Free, confidential support is available 24/7.
             </p>
 
@@ -54,7 +54,7 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
               {/* Tele-MANAS */}
               <a
                 href="tel:14416"
-                className="flex items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold transition shadow-lg shadow-rose-950/40 group cursor-pointer"
+                className="flex items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold transition shadow-lg shadow-rose-950/50 group cursor-pointer"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
@@ -73,18 +73,18 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
               {/* National Emergency 112 */}
               <a
                 href="tel:112"
-                className="flex items-center justify-between p-3.5 rounded-2xl bg-[#1E293B] hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold transition group cursor-pointer"
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-[#360C14] hover:bg-[#45101A] border border-rose-800/80 text-rose-100 font-bold transition group cursor-pointer"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-rose-400 shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-black/30 border border-rose-700/60 flex items-center justify-center text-rose-400 shrink-0">
                     <PhoneCall size={18} />
                   </div>
                   <div className="text-left">
-                    <div className="text-sm font-bold text-slate-100">National Emergency Services</div>
-                    <div className="text-xs text-slate-400">Police / Medical Immediate Assistance</div>
+                    <div className="text-sm font-bold text-white">National Emergency Services</div>
+                    <div className="text-xs text-rose-300/80">Police / Medical Immediate Assistance</div>
                   </div>
                 </div>
-                <span className="text-xs text-rose-300 font-extrabold bg-rose-950/80 border border-rose-800 px-2.5 py-1 rounded-md">
+                <span className="text-xs text-rose-200 font-extrabold bg-rose-950/80 border border-rose-700 px-2.5 py-1 rounded-md">
                   Call 112
                 </span>
               </a>
@@ -92,15 +92,15 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
               {/* Vandrevala Foundation */}
               <a
                 href="tel:+919999666555"
-                className="flex items-center justify-between p-3.5 rounded-2xl bg-[#1E293B] hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold transition group cursor-pointer"
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-[#360C14] hover:bg-[#45101A] border border-rose-800/80 text-rose-100 font-bold transition group cursor-pointer"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-teal-400 shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-black/30 border border-teal-500/40 flex items-center justify-center text-teal-400 shrink-0">
                     <Heart size={18} />
                   </div>
                   <div className="text-left">
-                    <div className="text-sm font-bold text-slate-100">Vandrevala Foundation Helpline</div>
-                    <div className="text-xs text-slate-400">24x7 Free Crisis Counseling</div>
+                    <div className="text-sm font-bold text-white">Vandrevala Foundation Helpline</div>
+                    <div className="text-xs text-rose-300/80">24x7 Free Crisis Counseling</div>
                   </div>
                 </div>
                 <span className="text-xs text-teal-300 font-bold bg-teal-950/80 border border-teal-800 px-2.5 py-1 rounded-md">
@@ -109,14 +109,14 @@ export const EmergencyModal = ({ isOpen, onClose }) => {
               </a>
             </div>
 
-            <div className="bg-slate-900 rounded-xl p-3 mb-6 text-[11px] text-slate-400 text-left border border-slate-800">
-              <span className="font-semibold text-slate-200">Privacy Notice:</span> CalmChain connects you with verified helplines. No medical records or personal identity are shared without consent.
+            <div className="bg-black/30 rounded-xl p-3 mb-6 text-[11px] text-rose-200/80 text-left border border-white/10">
+              <span className="font-semibold text-white">Privacy Notice:</span> CalmChain connects you with verified helplines. No medical records or personal identity are shared without consent.
             </div>
 
             <div className="flex gap-3">
               <button
                 onClick={onClose}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold transition text-sm cursor-pointer"
+                className="w-full py-3 bg-black/30 hover:bg-black/50 text-rose-200 rounded-xl font-bold transition text-sm cursor-pointer border border-white/10"
               >
                 Return to Calm Space
               </button>

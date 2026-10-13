@@ -8,7 +8,7 @@ const { assessSupportLevel } = require("./classifier");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "50kb" }));
 
 const server = http.createServer(app);
 
@@ -29,14 +29,24 @@ CRITICAL CONVERSATIONAL RULES:
 5. You are NOT a doctor, psychiatrist, or licensed clinical therapist. Never make medical or psychiatric diagnoses.
 6. If the user expresses imminent self-harm, suicide, or crisis, calmly ask: "Are you in immediate danger right now?" and remind them that free, confidential help is available 24/7 (Tele-MANAS: 14416, Emergency: 112).`;
 
-// Generate concise empathetic response using configured AI Provider or Offline Engine
+/**
+ * Generate concise, empathetic response using configured AI Provider or topic-aware wellness engine.
+ */
 async function generateAiResponse(text, userEmotion, riskAssessment) {
-  const provider = (process.env.AI_PROVIDER || "offline").toLowerCase();
-
-  // Urgent Level 3 Safety Protocol takes immediate priority
-  if (riskAssessment.level === 3) {
-    return "I hear how much pain you're carrying right now, and I want you to know you are not alone 💙 Are you in immediate danger right now? Please connect with someone who can help right now — you can call Tele-MANAS at 14416 or Emergency 112 immediately. We have resources ready on your screen.";
+  // Input validation
+  if (!text || typeof text !== "string") {
+    return "I'm here with you. Take a steady breath whenever you're ready to share.";
   }
+  const cleanText = text.trim().slice(0, 1000); // Guard max length
+
+  // --------------------------------------------------------------------------
+  // LEVEL 3 SAFETY PROTOCOL (Immediate priority)
+  // --------------------------------------------------------------------------
+  if (riskAssessment.level === 3) {
+    return "I hear how much pain you're carrying right now, and I want you to know you are not alone 💙 Are you in immediate danger right now? Please connect with someone who can help right now — you can call Tele-MANAS at 14416 (toll-free 24/7) or National Emergency 112 immediately. Confidential resources are on your screen.";
+  }
+
+  const provider = (process.env.AI_PROVIDER || "").toLowerCase();
 
   // 1. Google Gemini Provider
   if ((provider === "gemini" || process.env.GEMINI_API_KEY) && process.env.GEMINI_API_KEY) {
@@ -48,7 +58,7 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
           {
             role: "user",
             parts: [
-              { text: `${WELLNESS_SYSTEM_INSTRUCTION}\n\nUser message: "${text}"\nReply (1-3 sentences, warm and concise):` }
+              { text: `${WELLNESS_SYSTEM_INSTRUCTION}\n\nSupport Level: Level ${riskAssessment.level}\nUser message: "${cleanText}"\nReply (1-3 sentences, warm, specific to their message):` }
             ]
           }
         ],
@@ -60,9 +70,9 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
 
       const res = await axios.post(url, payload, { timeout: 7000 });
       const candidate = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (candidate) return candidate.trim();
+      if (candidate && candidate.trim()) return candidate.trim();
     } catch (err) {
-      console.warn("Gemini API call failed, falling back to local wellness engine:", err?.message || err);
+      console.warn("[CalmChain AI] Gemini provider error:", err?.response?.data || err?.message);
     }
   }
 
@@ -74,8 +84,8 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
         {
           model: "llama-3.1-8b-instant",
           messages: [
-            { role: "system", content: WELLNESS_SYSTEM_INSTRUCTION },
-            { role: "user", content: text }
+            { role: "system", content: `${WELLNESS_SYSTEM_INSTRUCTION}\nSupport Level: Level ${riskAssessment.level}` },
+            { role: "user", content: cleanText }
           ],
           max_tokens: 100,
           temperature: 0.7
@@ -86,9 +96,9 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
         }
       );
       const content = res.data?.choices?.[0]?.message?.content;
-      if (content) return content.trim();
+      if (content && content.trim()) return content.trim();
     } catch (err) {
-      console.warn("Groq API call failed, falling back to local wellness engine:", err?.message || err);
+      console.warn("[CalmChain AI] Groq provider error:", err?.response?.data || err?.message);
     }
   }
 
@@ -100,8 +110,8 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
         {
           model: "gpt-4o-mini",
           messages: [
-            { role: "system", content: WELLNESS_SYSTEM_INSTRUCTION },
-            { role: "user", content: text }
+            { role: "system", content: `${WELLNESS_SYSTEM_INSTRUCTION}\nSupport Level: Level ${riskAssessment.level}` },
+            { role: "user", content: cleanText }
           ],
           max_tokens: 100,
           temperature: 0.7
@@ -112,61 +122,68 @@ async function generateAiResponse(text, userEmotion, riskAssessment) {
         }
       );
       const content = res.data?.choices?.[0]?.message?.content;
-      if (content) return content.trim();
+      if (content && content.trim()) return content.trim();
     } catch (err) {
-      console.warn("OpenAI API call failed, falling back to local wellness engine:", err?.message || err);
+      console.warn("[CalmChain AI] OpenAI provider error:", err?.response?.data || err?.message);
     }
   }
 
-  // 4. Transparent, Empathetic Offline Support Engine (Concise, Conversational, Human-Centric)
-  const lower = text.toLowerCase().trim();
+  // --------------------------------------------------------------------------
+  // 4. Topic-Aware Empathetic Mental Wellness Engine
+  // Generates specific, comforting, non-repetitive responses tailored to the
+  // user's actual emotion and subject.
+  // --------------------------------------------------------------------------
+  const lower = cleanText.toLowerCase();
 
-  // Greetings
-  if (/^(hi|hello|hey|good morning|good evening|good afternoon)\b/i.test(lower)) {
-    return "Hi 💚 I'm here with you. How are you feeling today?";
+  // Breathing / Grounding tool request
+  if (lower.includes("breathing") || lower.includes("grounding") || lower.includes("calm down")) {
+    return "Let's take a slow breath together: inhale for 4 seconds, gently hold for 4, and release for 4. You can also open the Box Breathing tool in your sidebar anytime.";
   }
 
-  // Breathing / Grounding Request
-  if (lower.includes("breathing exercise") || lower.includes("breath exercise") || lower.includes("grounding")) {
-    return "Let's try box breathing: inhale gently for 4 seconds, hold for 4, exhale for 4, then pause for 4. Repeat gently a few times. You can also tap the Box Breathing tool in your sidebar whenever you like.";
-  }
-
-  // Bad day / tough day
-  if (lower.includes("bad day") || lower.includes("rough day") || lower.includes("terrible day") || lower.includes("awful day")) {
-    return "I'm sorry today was difficult. 💚 Want to tell me what happened?";
-  }
-
-  // Exam / college stress
-  if (lower.includes("exam") || lower.includes("study") || lower.includes("studies") || lower.includes("homework") || lower.includes("college")) {
-    return "That sounds stressful, but remember to take it one step at a time. What's worrying you most right now?";
-  }
-
-  // Presentation / public speaking
-  if (lower.includes("presentation") || lower.includes("nervous about")) {
-    return "It's completely natural to feel nervous before a presentation. Take a deep, slow breath right now. Would running through what you want to say help you feel more prepared?";
-  }
-
-  // Level 2 Elevated Distress
+  // LEVEL 2 TOPICS: Stress, Heartbreak, Exams, Loneliness, Overthinking, Anger, Crying
   if (riskAssessment.level === 2) {
-    if (lower.includes("lonely") || lower.includes("isolated") || lower.includes("nobody understands")) {
-      return "Feeling isolated is really tough, but you are not alone in this space 💙 I'm sitting right here with you. Would you like to share what's on your mind?";
+    if (lower.includes("breakup") || lower.includes("hurt") || lower.includes("heartbroken") || lower.includes("relationship")) {
+      return "Going through a breakup is deeply painful, and it's completely okay to feel hurt right now 💙 Be gentle with yourself today. What part feels most difficult to sit with at this moment?";
     }
-    if (lower.includes("overwhelmed") || lower.includes("too much") || lower.includes("giving up")) {
-      return "When everything piles up, it's exhausting. Let's pause together and take a slow breath. If you could set aside everything else, what is the single smallest thing we can focus on right now?";
+    if (lower.includes("exam") || lower.includes("study") || lower.includes("studies") || lower.includes("college") || lower.includes("test")) {
+      return "Exam stress can feel like a heavy weight, but remember you don't have to carry the whole semester at once. Let's take it one concept at a time. What is worrying you most right now?";
     }
-    if (lower.includes("panic") || lower.includes("anxiety") || lower.includes("overthinking")) {
-      return "When overthinking and anxiety rise, grounding can gently anchor you. Try placing both feet flat on the floor and taking 3 slow, deep breaths. I'm right here with you.";
+    if (lower.includes("lonely") || lower.includes("isolated") || lower.includes("alone") || lower.includes("nobody")) {
+      return "Feeling lonely can ache in a very quiet way, but you are not alone in this space 💙 I'm right here with you. What usually brings you a tiny bit of comfort when loneliness hits?";
     }
-    return "I hear how heavy this feels right now. Thank you for sharing it with me 💚 Let's take it one gentle breath at a time. What feels like the hardest part at this moment?";
+    if (lower.includes("overthinking") || lower.includes("racing") || lower.includes("anxious") || lower.includes("panic") || lower.includes("tension")) {
+      return "When anxiety and overthinking take over, let's ground your senses. Feel your feet resting on the floor and take three long, slow exhalations. What specific thought is looping right now?";
+    }
+    if (lower.includes("cry") || lower.includes("crying") || lower.includes("sad") || lower.includes("tears")) {
+      return "Crying is your nervous system's way of releasing built-up tension, so please don't hold it back. It's okay to feel sad. Would you like to tell me what triggered these feelings?";
+    }
+    if (lower.includes("angry") || lower.includes("frustrated") || lower.includes("mad") || lower.includes("furious")) {
+      return "It makes sense that you're feeling frustrated — anger often shows up when things feel unfair or overwhelming. Take a moment to let that out. What happened that made you feel this way?";
+    }
+    if (lower.includes("sleep") || lower.includes("insomnia") || lower.includes("tired")) {
+      return "When tension keeps you awake, try relaxing your jaw and dropping your shoulders right now. Rest is still valuable even if sleep is delayed. How long have you been having trouble sleeping?";
+    }
+    if (lower.includes("overwhelmed") || lower.includes("too much") || lower.includes("giving up") || lower.includes("future")) {
+      return "When everything feels like too much, we only need to survive the next five minutes. You don't have to figure out your entire future today. What is the single smallest thing on your mind right now?";
+    }
+    return "I hear how heavy this feels for you right now 💚 Thank you for having the courage to share it. Let's take a slow breath together — what feels like the hardest part at this moment?";
   }
 
-  // Good / positive / peaceful
-  if (lower.includes("happy") || lower.includes("good") || lower.includes("relaxed") || lower.includes("peaceful") || lower.includes("doing okay")) {
-    return "That's wonderful to hear 😊 What's brought you a feeling of calm or joy today?";
+  // LEVEL 1 TOPICS: Positive, Calm, Daily reflection, Greetings
+  if (lower.includes("good") || lower.includes("happy") || lower.includes("relaxed") || lower.includes("calm") || lower.includes("grateful") || lower.includes("fine") || lower.includes("okay")) {
+    return "I'm really glad to hear that 😊 Moments of calm and gratitude are so precious. What's been the brightest or most peaceful part of your day?";
+  }
+  if (lower.includes("excited") || lower.includes("nice day") || lower.includes("better")) {
+    return "That's wonderful to hear! Having something to look forward to brings so much light. What's making you feel excited?";
+  }
+  if (/^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(lower)) {
+    return "Hi 🌿 Welcome to your calm sanctuary. How is your heart and mind feeling today?";
+  }
+  if (lower.includes("homework") || lower.includes("work") || lower.includes("day") || lower.includes("talk")) {
+    return "I'm listening and right here with you. What would you like to explore or share today?";
   }
 
-  // General conversational reply
-  return "I'm listening and holding space for you. How has your day been treating your heart and mind so far?";
+  return "I'm right here with you in this space 🌿 How has your day been treating your heart and mind so far?";
 }
 
 // REST Endpoints
@@ -248,7 +265,7 @@ io.on("connection", (socket) => {
       console.error("[CalmChain] Error processing socket message:", err);
       socket.emit("receiveMessage", {
         userId: data?.userId,
-        text: "I'm here with you. Take a gentle breath while we reconnect.",
+        text: "I'm here with you. Take a steady breath while we reconnect.",
         sender: "ai",
         emotion: "calm",
         level: 1,
@@ -258,15 +275,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    // Clean socket disconnect
+    console.log(`[CalmChain] Client disconnected: ${socket.id}`);
   });
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`===============================================`);
-  console.log(` CalmChain Mental Wellness Server active`);
-  console.log(` Listening on port: ${PORT}`);
-  console.log(` Provider Mode: ${process.env.AI_PROVIDER || 'offline'}`);
-  console.log(`===============================================`);
+  console.log(`[CalmChain Backend] Running on http://localhost:${PORT}`);
+  console.log(`[CalmChain Backend] AI Provider mode: ${process.env.AI_PROVIDER || "offline"}`);
 });

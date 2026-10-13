@@ -67,7 +67,7 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4"
           onClick={onClose}
         >
           <motion.div
@@ -75,13 +75,13 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="w-full max-w-md bg-[#0F172A] border border-slate-800 rounded-3xl p-8 shadow-2xl relative text-center text-slate-100 overflow-hidden"
+            className={`w-full max-w-md ${theme.cardBg} border ${theme.border} rounded-3xl p-8 shadow-2xl relative text-center ${theme.textPrimary} overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="absolute top-5 right-5 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              className="absolute top-5 right-5 p-2 rounded-xl bg-black/25 hover:bg-black/45 text-slate-300 hover:text-white transition cursor-pointer border border-white/10"
               aria-label="Close breathing exercise"
             >
               <X size={20} />
@@ -90,9 +90,9 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
             {/* Header */}
             <div className={`flex items-center justify-center gap-2 mb-2 ${theme.textSecondary}`}>
               <Wind size={22} className="animate-pulse" />
-              <h2 className="text-xl font-bold font-['Outfit'] text-white">Box Breathing Grounding</h2>
+              <h2 className="text-xl font-bold font-['Outfit']">Box Breathing Grounding</h2>
             </div>
-            <p className="text-xs text-slate-400 mb-8">
+            <p className={`text-xs ${theme.textMuted} mb-8`}>
               A 4-4-4-4 rhythm to activate your parasympathetic nervous system and restore calm.
             </p>
 
@@ -112,7 +112,7 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
                   opacity: isActive ? [0.3, 0.6, 0.3] : 0.2
                 }}
                 transition={{ duration: 4, ease: "easeInOut" }}
-                className={`absolute inset-0 rounded-full border border-slate-700 ${theme.badge} blur-xs`}
+                className={`absolute inset-0 rounded-full border ${theme.border} ${theme.badge} blur-xs`}
               />
 
               <motion.div
@@ -128,20 +128,20 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
                     : 1
                 }}
                 transition={{ duration: 4, ease: "easeInOut" }}
-                className="w-36 h-36 rounded-full bg-[#1E293B] border-2 border-slate-700 shadow-xl flex flex-col items-center justify-center z-10"
+                className={`w-36 h-36 rounded-full bg-black/35 border-2 ${theme.border} shadow-xl flex flex-col items-center justify-center z-10`}
               >
                 <span className={`text-xs uppercase font-bold tracking-widest ${theme.textSecondary}`}>
                   {phase}
                 </span>
-                <span className="text-4xl font-black font-['Outfit'] my-1 text-white">
+                <span className="text-4xl font-black font-['Outfit'] my-1">
                   {countdown}
                 </span>
-                <span className="text-[10px] text-slate-400">seconds</span>
+                <span className={`text-[10px] ${theme.textMuted}`}>seconds</span>
               </motion.div>
             </div>
 
             {/* Guidance Text */}
-            <p className="text-sm font-medium text-slate-300 min-h-[40px] px-4 mb-6">
+            <p className={`text-sm font-medium ${theme.textSecondary} min-h-[40px] px-4 mb-6`}>
               {isActive ? getPhaseInstruction() : "Press start to begin your 4-phase calming breath."}
             </p>
 
@@ -151,7 +151,7 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
                 onClick={() => setIsActive(!isActive)}
                 className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition shadow-md cursor-pointer ${
                   isActive
-                    ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+                    ? "bg-black/30 hover:bg-black/50 text-slate-200 border border-white/10"
                     : theme.accentButton
                 }`}
               >
@@ -166,7 +166,7 @@ export const BreathingExerciseModal = ({ isOpen, onClose }) => {
                   setCountdown(4);
                   setCyclesCompleted(0);
                 }}
-                className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition border border-slate-700 cursor-pointer"
+                className="p-3 rounded-2xl bg-black/30 hover:bg-black/50 text-slate-300 hover:text-white transition border border-white/10 cursor-pointer"
                 title="Reset"
                 aria-label="Reset exercise"
               >

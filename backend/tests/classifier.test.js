@@ -1,5 +1,6 @@
 // ============================================================================
 // Unit Tests for CalmChain Contextual Support Level Classifier
+// Tests all prompt-specified human-language expressions, negations, and safeguards.
 // ============================================================================
 
 const assert = require("assert");
@@ -7,64 +8,63 @@ const { assessSupportLevel } = require("../classifier");
 
 const testCases = [
   // --------------------------------------------------------------------------
-  // LEVEL 1 — CALM SUPPORT: GREEN + WHITE
+  // USER PROMPT SPECIFIED LEVEL 1 EXAMPLES
   // --------------------------------------------------------------------------
-  { text: "Hi", expectedLevel: 1, label: "Simple greeting" },
-  { text: "Hello there", expectedLevel: 1, label: "Standard greeting" },
-  { text: "I'm feeling good today.", expectedLevel: 1, label: "Positive state" },
-  { text: "I am relaxed and happy.", expectedLevel: 1, label: "Relaxed state" },
-  { text: "I had a normal day at college.", expectedLevel: 1, label: "Normal day" },
-  { text: "I'm a little tired after class.", expectedLevel: 1, label: "Mild tiredness" },
-  { text: "Can you help me focus on my studies?", expectedLevel: 1, label: "Focus request" },
-  { text: "I have some homework to finish tonight.", expectedLevel: 1, label: "Homework talk" },
-  { text: "I want a breathing exercise.", expectedLevel: 1, label: "Wellness tool request" },
-  { text: "I feel slightly stressed about exams tomorrow.", expectedLevel: 1, label: "Mild ordinary exam stress" },
-  { text: "I feel nervous about my presentation.", expectedLevel: 1, label: "Mild presentation nerves" },
-  { text: "I am bored and want to chat.", expectedLevel: 1, label: "Boredom" },
+  { text: "I feel good today", expectedLevel: 1, label: "L1: 'I feel good today'" },
+  { text: "I am happy", expectedLevel: 1, label: "L1: 'I am happy'" },
+  { text: "I feel calm", expectedLevel: 1, label: "L1: 'I feel calm'" },
+  { text: "I am doing okay", expectedLevel: 1, label: "L1: 'I am doing okay'" },
+  { text: "I am feeling relaxed", expectedLevel: 1, label: "L1: 'I am feeling relaxed'" },
+  { text: "I had a nice day", expectedLevel: 1, label: "L1: 'I had a nice day'" },
+  { text: "I'm excited about tomorrow", expectedLevel: 1, label: "L1: 'I\'m excited about tomorrow'" },
+  { text: "I feel better now", expectedLevel: 1, label: "L1: 'I feel better now'" },
+  { text: "I am grateful", expectedLevel: 1, label: "L1: 'I am grateful'" },
+  { text: "I am fine", expectedLevel: 1, label: "L1: 'I am fine'" },
+  { text: "Hi there!", expectedLevel: 1, label: "L1: Simple greeting" },
+  { text: "Can we talk about my homework?", expectedLevel: 1, label: "L1: Homework/study discussion" },
 
   // --------------------------------------------------------------------------
-  // LEVEL 2 — GUIDED SUPPORT: YELLOW + WHITE
+  // USER PROMPT SPECIFIED LEVEL 2 EXAMPLES
   // --------------------------------------------------------------------------
-  { text: "I feel very stressed.", expectedLevel: 2, label: "Elevated stress" },
-  { text: "I'm overwhelmed with everything.", expectedLevel: 2, label: "Overwhelmed state" },
-  { text: "I can't stop overthinking about my future.", expectedLevel: 2, label: "Persistent overthinking" },
-  { text: "I'm feeling lonely and isolated.", expectedLevel: 2, label: "Loneliness" },
-  { text: "I'm having frequent panic feelings.", expectedLevel: 2, label: "Panic sensations" },
-  { text: "I feel hopeless about my situation.", expectedLevel: 2, label: "Hopelessness" },
-  { text: "I'm crying a lot lately.", expectedLevel: 2, label: "Frequent crying" },
-  { text: "I feel emotionally exhausted.", expectedLevel: 2, label: "Emotional burnout" },
-  { text: "I feel worthless.", expectedLevel: 2, label: "Feelings of worthlessness" },
-  { text: "Nobody understands me.", expectedLevel: 2, label: "Perceived isolation" },
-  { text: "I can't sleep because of anxiety.", expectedLevel: 2, label: "Anxiety sleep disruption" },
-  { text: "I feel like giving up on my studies.", expectedLevel: 2, label: "Giving up on studies" },
-  { text: "I've been feeling very low for several days.", expectedLevel: 2, label: "Prolonged low mood" },
+  { text: "I am stressed", expectedLevel: 2, label: "L2: 'I am stressed'" },
+  { text: "I feel anxious", expectedLevel: 2, label: "L2: 'I feel anxious'" },
+  { text: "I am worried about my exams", expectedLevel: 2, label: "L2: 'I am worried about my exams'" },
+  { text: "I feel lonely", expectedLevel: 2, label: "L2: 'I feel lonely'" },
+  { text: "I can't stop overthinking", expectedLevel: 2, label: "L2: 'I can\'t stop overthinking'" },
+  { text: "I had a breakup and I'm hurt", expectedLevel: 2, label: "L2: 'I had a breakup and I\'m hurt'" },
+  { text: "I feel sad", expectedLevel: 2, label: "L2: 'I feel sad'" },
+  { text: "I am frustrated", expectedLevel: 2, label: "L2: 'I am frustrated'" },
+  { text: "I feel overwhelmed", expectedLevel: 2, label: "L2: 'I feel overwhelmed'" },
+  { text: "I can't sleep because of tension", expectedLevel: 2, label: "L2: 'I can\'t sleep because of tension'" },
+  { text: "I am scared about my future", expectedLevel: 2, label: "L2: 'I am scared about my future'" },
+  { text: "I feel like crying", expectedLevel: 2, label: "L2: 'I feel like crying'" },
+  { text: "Everything feels too much", expectedLevel: 2, label: "L2: 'Everything feels too much'" },
+  { text: "I am angry with everyone", expectedLevel: 2, label: "L2: 'I am angry with everyone'" },
 
   // --------------------------------------------------------------------------
-  // LEVEL 3 — PRIORITY SUPPORT: RED + WHITE
+  // USER PROMPT SPECIFIED LEVEL 3 SAFETY EXAMPLES
   // --------------------------------------------------------------------------
-  { text: "I want to kill myself.", expectedLevel: 3, label: "Explicit suicide intent" },
-  { text: "I'm going to end my life.", expectedLevel: 3, label: "Explicit end of life plan" },
-  { text: "I am planning to suicide.", expectedLevel: 3, label: "Planning suicide" },
-  { text: "I want to hurt myself right now.", expectedLevel: 3, label: "Imminent self-harm" },
-  { text: "I have a plan to end my life.", expectedLevel: 3, label: "Concrete suicide plan" },
-  { text: "I might act on these thoughts tonight.", expectedLevel: 3, label: "Imminent timeline" },
-  { text: "I have taken pills to hurt myself.", expectedLevel: 3, label: "Self-harm act executed" },
-  { text: "I am about to hurt someone.", expectedLevel: 3, label: "Imminent violence" },
-  { text: "Someone is threatening to seriously hurt me right now.", expectedLevel: 3, label: "Immediate external threat" },
-  { text: "I cannot keep myself safe right now.", expectedLevel: 3, label: "Inability to maintain safety" },
-  { text: "I have the means with me and I might use them.", expectedLevel: 3, label: "Access to lethal means" },
-  { text: "Breakup && die", expectedLevel: 3, label: "Breakup & die crisis slang" },
+  { text: "I want to kill myself", expectedLevel: 3, label: "L3: 'I want to kill myself'" },
+  { text: "I want to end my life", expectedLevel: 3, label: "L3: 'I want to end my life'" },
+  { text: "I don't want to live anymore", expectedLevel: 3, label: "L3: 'I don\'t want to live anymore'" },
+  { text: "I might hurt myself", expectedLevel: 3, label: "L3: 'I might hurt myself'" },
+  { text: "I am going to kill myself", expectedLevel: 3, label: "L3: 'I am going to kill myself'" },
+  { text: "I have a plan to end my life", expectedLevel: 3, label: "L3: 'I have a plan to end my life'" },
+  { text: "I want to die", expectedLevel: 3, label: "L3: 'I want to die'" },
+  { text: "I can't keep myself safe", expectedLevel: 3, label: "L3: 'I can\'t keep myself safe'" },
+  { text: "I am thinking about suicide", expectedLevel: 3, label: "L3: 'I am thinking about suicide'" },
+  { text: "Breakup && die", expectedLevel: 3, label: "L3: 'Breakup && die'" },
 
   // --------------------------------------------------------------------------
-  // CRITICAL SAFEGUARDS: NEGATION & CONTEXT
+  // CONTEXTUAL SAFEGUARDS: NEGATIONS & AMBIGUOUS KEYWORDS
   // --------------------------------------------------------------------------
   {
     text: "I don't want to hurt myself, I just feel stressed.",
-    expectedLevel: 1, // Negated L3, mild stress -> not L3!
-    label: "Negation: 'don't want to hurt myself'"
+    expectedLevel: 2, // Stress is present (L2), but self-harm is negated (not L3!)
+    label: "Negation: 'don't want to hurt myself' with stress"
   },
   {
-    text: "I do not want to die, I just need advice.",
+    text: "I do not want to die, I just need to talk to someone.",
     expectedLevel: 1,
     label: "Negation: 'do not want to die'"
   },
@@ -79,7 +79,12 @@ const testCases = [
     label: "Third-person: 'My friend wants to die'"
   },
   {
-    text: "I had a peaceful day with friends, but I want to end my life tonight.",
+    text: "I was playing a video game where my character dies.",
+    expectedLevel: 1,
+    label: "Contextual: gaming reference"
+  },
+  {
+    text: "I had a peaceful morning, but I have a plan to end my life tonight.",
     expectedLevel: 3, // High risk must not be overridden by peaceful phrase
     label: "Mixed-severity: high-risk override"
   }
@@ -101,9 +106,7 @@ testCases.forEach((tc, idx) => {
     console.log(`[PASS] #${idx + 1} (${tc.label}): Level ${result.level} matched expected Level ${tc.expectedLevel}`);
   } else {
     failed++;
-    console.error(`[FAIL] #${idx + 1} (${tc.label}): Got Level ${result.level} (emotion: ${result.emotion}), expected Level ${tc.expectedLevel}`);
-    console.error(`       Text: "${tc.text}"`);
-    console.error(`       Reason: ${result.reason}`);
+    console.error(`[FAIL] #${idx + 1} (${tc.label}): Expected Level ${tc.expectedLevel}, got Level ${result.level} (Reason: ${result.reason})`);
   }
 });
 
